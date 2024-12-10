@@ -1,0 +1,14 @@
+{
+  "providers": [
+    {
+      "type": "ttf",
+      "file": "packetcapture:jetbrainsmono-regular.ttf",
+      "shift": [
+        -0.2,
+        1.2
+      ],
+      "size": 9.1,
+      "oversample": 8.0
+    }
+  ]
+}
