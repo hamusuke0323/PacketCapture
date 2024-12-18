@@ -1,5 +1,6 @@
 package com.hamusuke.packetcap.gui.overlay;
 
+import com.hamusuke.packetcap.Config;
 import com.hamusuke.packetcap.PacketCapture;
 import com.hamusuke.packetcap.utils.ByteConversion;
 import net.minecraft.client.Minecraft;
@@ -24,6 +25,17 @@ public class PacketCaptureOverlay {
         this.drawReceivedPackets(gui);
     }
 
+    private static String applyConfig(String name) {
+        if (!Config.showPacketFlow) {
+            name = name.replace("Serverbound", "").replace("Clientbound", "");
+        }
+        if (!Config.showPacketNamePostfix) {
+            name = name.replace("Packet", "");
+        }
+
+        return name;
+    }
+
     private void drawSentPackets(GuiGraphics gui) {
         var list = this.capture.getSentPackets();
         int size = list.size();
@@ -39,7 +51,7 @@ public class PacketCaptureOverlay {
         }
 
         for (int i = Mth.clamp(size - 1 - this.mc.getWindow().getGuiScaledHeight() / 9 - 1, 0, size - 1); i < size; ++i) {
-            var s = Component.literal(list.get(i).getPacketClassName()).withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+            var s = Component.literal(applyConfig(list.get(i).getPacketClassName())).withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
             int k = this.mc.font.width(s);
             if (k > 0) {
                 int i1 = 2 + 9 + 9 * (size - 1 - i);
@@ -66,7 +78,7 @@ public class PacketCaptureOverlay {
         }
 
         for (int i = Mth.clamp(size - 1 - this.mc.getWindow().getGuiScaledHeight() / 9 - 1, 0, size - 1); i < size; ++i) {
-            var s = Component.literal(list.get(i).getPacketClassName()).withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+            var s = Component.literal(applyConfig(list.get(i).getPacketClassName())).withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
             int k = this.mc.font.width(s);
             if (k > 0) {
                 int l = this.mc.getWindow().getGuiScaledWidth() - 2 - k;

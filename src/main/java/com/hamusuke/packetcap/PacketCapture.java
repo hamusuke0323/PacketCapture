@@ -3,13 +3,16 @@ package com.hamusuke.packetcap;
 import com.google.common.collect.*;
 import com.google.gson.Gson;
 import com.google.gson.stream.JsonWriter;
+import com.hamusuke.packetcap.clazz.visitor.PairVisitor;
 import com.hamusuke.packetcap.event.AddLayersEvent;
+import com.hamusuke.packetcap.event.RegisterClassVisitorsEvent;
 import com.hamusuke.packetcap.filter.FilterType;
 import com.hamusuke.packetcap.filter.PacketFilter;
 import com.hamusuke.packetcap.gui.overlay.PacketCaptureOverlay;
 import com.hamusuke.packetcap.gui.screen.PacketListScreen;
 import com.hamusuke.packetcap.packet.DedicatedPacket;
 import com.hamusuke.packetcap.packet.PacketDetails;
+import com.mojang.datafixers.util.Pair;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
@@ -18,7 +21,9 @@ import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig.Type;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.apache.logging.log4j.LogManager;
@@ -59,6 +64,8 @@ public final class PacketCapture {
             new PacketFilter("MovePlayer", FilterType.CONTAINS),
             new PacketFilter("Sound", FilterType.CONTAINS),
             new PacketFilter("KeepAlive", FilterType.CONTAINS),
+            new PacketFilter("Ping", FilterType.CONTAINS),
+            new PacketFilter("Pong", FilterType.CONTAINS),
             new PacketFilter("Attributes", FilterType.CONTAINS),
             new PacketFilter("SetTime", FilterType.CONTAINS),
             new PacketFilter("TeleportEntity", FilterType.CONTAINS),
@@ -95,6 +102,8 @@ public final class PacketCapture {
         MinecraftForge.EVENT_BUS.register(this);
         FMLJavaModLoadingContext.get().getModEventBus().addListener(PacketCapture::registerKeyBinding);
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::onAddLayers);
+
+        ModLoadingContext.get().registerConfig(Type.CLIENT, Config.SPEC);
     }
 
     private static void registerKeyBinding(RegisterKeyMappingsEvent event) {

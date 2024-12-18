@@ -30,6 +30,7 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
             var field = fields.get(i);
             var last = i >= fields.size() - 1;
             this.addEntry(field.getVisitor(), field.getDescription() + (array && !last ? "," : ""), packetDetailsScreen, parent);
+            this.addEntry(new TextEntry(Component.literal(" ").withStyle(style -> style.withFont(PacketCapture.MONO_FONT)).getVisualOrderText()));
         }
 
         if (array) {
@@ -106,6 +107,11 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
         public void render(GuiGraphics guiGraphics, int i, int top, int i2, int i3, int i4, int i5, int i6, boolean b, float v) {
             guiGraphics.drawString(ClassFieldList.this.minecraft.font, this.text, ClassFieldList.this.width / 9 - 10, top, 16777215);
         }
+
+        @Override
+        public boolean mouseClicked(double p_333902_, double p_331922_, int p_328634_) {
+            return false;
+        }
     }
 
     protected class VisitableClassEntry extends AbstractEntry {
@@ -124,7 +130,7 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
 
         @Override
         public void render(GuiGraphics guiGraphics, int i, int top, int i2, int i3, int i4, int mouseX, int mouseY, boolean b, float v) {
-            this.button.setX(ClassFieldList.this.width / 8);
+            this.button.setX(ClassFieldList.this.width / 9 - 10);
             this.button.setY(top);
             this.button.render(guiGraphics, mouseX, mouseY, v);
         }

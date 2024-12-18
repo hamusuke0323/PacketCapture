@@ -15,20 +15,14 @@ public interface ClassField {
             return null;
         }
 
-        if (obj.getClass().isArray()) {
-            return new ArrayVisitor(obj.getClass(), ObjectUtil.toArray(obj));
-        }
+        var r = ClassVisitors.getRegistry();
+        for (int i = r.size() - 1; i >= 0; i--) {
+            var e = r.get(i);
+            if (!e.finder().test(obj)) {
+                continue;
+            }
 
-        if (obj instanceof Collection<?> collection) {
-            return new CollectionVisitor(collection.getClass(), collection);
-        }
-
-        if (obj instanceof Map<?, ?> map) {
-            return new MapVisitor(map.getClass(), map);
-        }
-
-        if (obj instanceof String || Primitives.isWrapperType(obj.getClass()) || obj.getClass().isEnum()) {
-            return new StringConvertibleClassVisitor(obj.getClass(), obj);
+            return e.factory().create(e.caster().apply(obj));
         }
 
         return new ClassVisitor(obj.getClass(), obj);
