@@ -17,13 +17,13 @@ import javax.annotation.Nullable;
 import java.util.function.Supplier;
 
 public class AddPacketFilterScreen extends Screen {
-    public static final Component TITLE = Component.translatable(PacketCapture.MOD_ID + ".add_filter").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component FILTERED_BY = Component.translatable(PacketCapture.MOD_ID + ".filtered_by").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+    public static final Component TITLE = Component.translatable(PacketCapture.MOD_ID + ".add_filter");
+    private static final Component FILTERED_BY = Component.translatable(PacketCapture.MOD_ID + ".filtered_by");
     @Nullable
     private Screen parent;
     private EditBox filteredBy;
     private FilterType curType = FilterType.EQUALS;
-    private final Supplier<Component> translatableFactory = () -> Component.translatable(PacketCapture.MOD_ID + ".type", this.curType.toString()).withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+    private final Supplier<Component> translatableFactory = () -> Component.translatable(PacketCapture.MOD_ID + ".type", this.curType.toString());
 
     public AddPacketFilterScreen() {
         super(TITLE);

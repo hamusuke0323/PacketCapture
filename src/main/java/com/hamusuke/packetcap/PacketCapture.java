@@ -9,6 +9,7 @@ import com.hamusuke.packetcap.event.RegisterClassVisitorsEvent;
 import com.hamusuke.packetcap.filter.FilterType;
 import com.hamusuke.packetcap.filter.PacketFilter;
 import com.hamusuke.packetcap.gui.overlay.PacketCaptureOverlay;
+import com.hamusuke.packetcap.gui.screen.ConfigScreen;
 import com.hamusuke.packetcap.gui.screen.PacketListScreen;
 import com.hamusuke.packetcap.packet.DedicatedPacket;
 import com.hamusuke.packetcap.packet.PacketDetails;
@@ -16,6 +17,7 @@ import com.mojang.datafixers.util.Pair;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.common.MinecraftForge;
@@ -104,6 +106,7 @@ public final class PacketCapture {
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::onAddLayers);
 
         ModLoadingContext.get().registerConfig(Type.CLIENT, Config.SPEC);
+        ModLoadingContext.get().registerExtensionPoint(ConfigScreenFactory.class, () -> new ConfigScreenFactory(ConfigScreen::new));
     }
 
     private static void registerKeyBinding(RegisterKeyMappingsEvent event) {
@@ -204,6 +207,12 @@ public final class PacketCapture {
         this.saveFilters();
     }
 
+    public void restoreDefaultFilters() {
+        this.packetFilters.clear();
+        this.packetFilters.addAll(DEFAULT_PACKET_FILTERS);
+        this.saveFilters();
+    }
+
     public ImmutableSet<PacketFilter> getFilters() {
         return ImmutableSet.copyOf(this.packetFilters);
     }
@@ -250,11 +259,11 @@ public final class PacketCapture {
 
     private void postAdd() {
         if (this.sentPackets.size() > MAX_PACKET_SIZE) {
-            this.sentPackets.remove(0);
+            this.sentPackets.removeFirst();
         }
 
         if (this.receivedPackets.size() > MAX_PACKET_SIZE) {
-            this.receivedPackets.remove(0);
+            this.receivedPackets.removeFirst();
         }
     }
 

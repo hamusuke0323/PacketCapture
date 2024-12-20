@@ -21,7 +21,7 @@ import javax.annotation.Nullable;
 
 @OnlyIn(Dist.CLIENT)
 public class PacketDetailsScreen extends Screen {
-    private static final Component ADD_TO_FILTER = Component.translatable(PacketCapture.MOD_ID + ".add_to_filter").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+    private static final Component ADD_TO_FILTER = Component.translatable(PacketCapture.MOD_ID + ".add_to_filter");
     @Nullable
     private final Screen parent;
     private final PacketDetails details;
@@ -58,7 +58,7 @@ public class PacketDetailsScreen extends Screen {
     }
 
     private final class Details extends ClassFieldList {
-        private static final Component DATA = Component.translatable(PacketCapture.MOD_ID + ".packetData").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+        private static final Component DATA = Component.translatable(PacketCapture.MOD_ID + ".packetData");
 
         public Details() {
             super(PacketDetailsScreen.this.minecraft, PacketDetailsScreen.this.width, PacketDetailsScreen.this.height - 40, 20, 10, PacketDetailsScreen.this.details.getVisitor(), PacketDetailsScreen.this, PacketDetailsScreen.this);

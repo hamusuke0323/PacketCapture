@@ -14,9 +14,10 @@ import javax.annotation.Nullable;
 import java.util.Collection;
 
 public class PacketFilterScreen extends Screen {
-    public static final Component TITLE = Component.translatable(PacketCapture.MOD_ID + ".packet_filter").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component RELOAD = Component.translatable(PacketCapture.MOD_ID + ".reload").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component REMOVE_ALL = Component.translatable(PacketCapture.MOD_ID + ".remove_all").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+    public static final Component TITLE = Component.translatable(PacketCapture.MOD_ID + ".packet_filter");
+    private static final Component RELOAD = Component.translatable(PacketCapture.MOD_ID + ".reload");
+    private static final Component REMOVE_ALL = Component.translatable(PacketCapture.MOD_ID + ".remove_all");
+    private static final Component RESTORE_DEFAULT = Component.translatable(PacketCapture.MOD_ID + ".restore_default");
     @Nullable
     private Screen parent;
     private PacketFilterList list;
@@ -39,14 +40,27 @@ public class PacketFilterScreen extends Screen {
 
         this.addRenderableWidget(Button.builder(REMOVE_ALL, p_93751_ -> {
             PacketCapture.getInstance().removeAllFilters();
-            this.init();
-        }).bounds(0, this.height - 20, this.width / 4, 20).build());
+            this.rebuildWidgets();
+        }).bounds(0, this.height - 40, this.width / 3, 20).build());
         this.addRenderableWidget(Button.builder(RELOAD, p_93751_ -> {
             PacketCapture.getInstance().loadFilters();
-            this.init();
-        }).bounds(this.width / 4, this.height - 20, this.width / 4, 20).build());
-        this.addRenderableWidget(Button.builder(AddPacketFilterScreen.TITLE, p_93751_ -> this.minecraft.setScreen(new AddPacketFilterScreen().setParent(this))).bounds(this.width / 2, this.height - 20, this.width / 4, 20).build());
-        this.addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, p_93751_ -> this.onClose()).bounds(this.width * 3 / 4, this.height - 20, this.width / 4, 20).build());
+            this.rebuildWidgets();
+        }).bounds(this.width / 3, this.height - 40, this.width / 3, 20).build());
+        this.addRenderableWidget(Button
+                .builder(AddPacketFilterScreen.TITLE, p_93751_ -> this.minecraft.setScreen(new AddPacketFilterScreen().setParent(this)))
+                .bounds(this.width * 2 / 3, this.height - 40, this.width / 3, 20)
+                .build());
+        this.addRenderableWidget(Button
+                .builder(RESTORE_DEFAULT, button -> {
+                    PacketCapture.getInstance().restoreDefaultFilters();
+                    this.rebuildWidgets();
+                })
+                .bounds(0, this.height - 20, this.width / 2, 20)
+                .build());
+        this.addRenderableWidget(Button
+                .builder(CommonComponents.GUI_BACK, p_93751_ -> this.onClose())
+                .bounds(this.width / 2, this.height - 20, this.width / 2, 20)
+                .build());
     }
 
     @Override
@@ -62,10 +76,10 @@ public class PacketFilterScreen extends Screen {
     }
 
     private final class PacketFilterList extends ObjectSelectionList<PacketFilterList.Entry> {
-        private static final Component LIST_TITLE = Component.translatable(PacketCapture.MOD_ID + ".cur_filtering").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+        private static final Component LIST_TITLE = Component.translatable(PacketCapture.MOD_ID + ".cur_filtering");
 
         private PacketFilterList(Collection<PacketFilter> list) {
-            super(PacketFilterScreen.this.minecraft, PacketFilterScreen.this.width, PacketFilterScreen.this.height - 50, 30, 10);
+            super(PacketFilterScreen.this.minecraft, PacketFilterScreen.this.width, PacketFilterScreen.this.height - 70, 30, 10);
 
             for (var filter : list) {
                 this.addEntry(new Entry(filter));
@@ -103,7 +117,7 @@ public class PacketFilterScreen extends Screen {
 
         @Override
         protected void renderDecorations(GuiGraphics p_281477_, int p_93459_, int p_93460_) {
-            p_281477_.drawCenteredString(this.minecraft.font, LIST_TITLE, this.getRowWidth() / 2, this.getY() - 10, 16777215);
+            p_281477_.drawCenteredString(this.minecraft.font, LIST_TITLE, this.width / 2, this.getY() - 10, 16777215);
         }
 
         @Override
@@ -112,7 +126,7 @@ public class PacketFilterScreen extends Screen {
         }
 
         private final class Entry extends ObjectSelectionList.Entry<Entry> {
-            private static final Component TEXT = Component.translatable(PacketCapture.MOD_ID + ".button.remove").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+            private static final Component TEXT = Component.translatable(PacketCapture.MOD_ID + ".button.remove");
             private final PacketFilter packetFilter;
             private final Button remove;
 
@@ -133,7 +147,6 @@ public class PacketFilterScreen extends Screen {
             @Override
             public void render(GuiGraphics guiGraphics, int i, int top, int i2, int i3, int i4, int mouseX, int mouseY, boolean isHovered, float tickDelta) {
                 var text = Component.translatable(PacketCapture.MOD_ID + ".filter_detail", this.packetFilter.filteredBy(), this.packetFilter.filterType().toString());
-                text.withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
                 var fontWidth = PacketFilterScreen.this.font.width(text);
                 var x = guiGraphics.drawString(PacketFilterScreen.this.font, text, (this.list.getRight() / 2 - (fontWidth + 50) / 2), top + 1, 16777215);
                 x = Math.min(x, this.list.getRight() - 50);

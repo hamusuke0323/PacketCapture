@@ -28,4 +28,10 @@ public class Config {
         showPacketFlow = SHOW_PACKET_FLOW.get();
         showPacketNamePostfix = SHOW_PACKET_NAME_POSTFIX.get();
     }
+
+    public static void save() {
+        SHOW_PACKET_FLOW.set(showPacketFlow);
+        SHOW_PACKET_NAME_POSTFIX.set(showPacketNamePostfix);
+        SPEC.save();
+    }
 }

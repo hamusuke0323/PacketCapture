@@ -41,8 +41,18 @@ public class PacketCaptureOverlay {
         int size = list.size();
         long sent = this.capture.getSentPacketNum();
         long bytes = this.capture.getSentBytes();
-        var component = this.mc.isLocalServer() ? Component.translatable(PacketCapture.MOD_ID + ".sent.detail", sent) : Component.translatable(PacketCapture.MOD_ID + ".sent.detail.dedicated", sent, bytes, ByteConversion.convertBytes(bytes));
-        component.withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+        var component = this.mc.isLocalServer() ?
+                Component.translatable(PacketCapture.MOD_ID + ".sent.detail",
+                        Component.literal("" + sent)
+                                .withStyle(style -> style.withFont(PacketCapture.MONO_FONT))) :
+                Component.translatable(PacketCapture.MOD_ID + ".sent.detail.dedicated",
+                        Component.literal("" + sent)
+                                .withStyle(style -> style.withFont(PacketCapture.MONO_FONT)),
+                        Component.literal("" + bytes)
+                                .withStyle(style -> style.withFont(PacketCapture.MONO_FONT)),
+                        Component.literal(ByteConversion.convertBytes(bytes))
+                                .withStyle(style -> style.withFont(PacketCapture.MONO_FONT)));
+
         gui.fill(1, 2 - 1, 2 + this.mc.font.width(component) + 1, 2 + 9 - 1, -1873784752);
         gui.drawString(this.mc.font, component, 2, 2, 14737632, false);
 
@@ -66,8 +76,18 @@ public class PacketCaptureOverlay {
         int size = list.size();
         long received = this.capture.getReceivedPacketNum();
         long bytes = this.capture.getReceivedBytes();
-        var component = this.mc.isLocalServer() ? Component.translatable(PacketCapture.MOD_ID + ".received.detail", received) : Component.translatable(PacketCapture.MOD_ID + ".received.detail.dedicated", received, bytes, ByteConversion.convertBytes(bytes));
-        component.withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+        var component = this.mc.isLocalServer() ?
+                Component.translatable(PacketCapture.MOD_ID + ".received.detail",
+                        Component.literal("" + received)
+                                .withStyle(style -> style.withFont(PacketCapture.MONO_FONT))) :
+                Component.translatable(PacketCapture.MOD_ID + ".received.detail.dedicated",
+                        Component.literal("" + received)
+                                .withStyle(style -> style.withFont(PacketCapture.MONO_FONT)),
+                        Component.literal("" + bytes)
+                                .withStyle(style -> style.withFont(PacketCapture.MONO_FONT)),
+                        Component.literal(ByteConversion.convertBytes(bytes))
+                                .withStyle(style -> style.withFont(PacketCapture.MONO_FONT)));
+
         int k2 = this.mc.font.width(component);
         int l2 = this.mc.getWindow().getGuiScaledWidth() - 2 - k2;
         gui.fill(l2 - 1, 2 - 1, l2 + k2 + 1, 2 + 9 - 1, -1873784752);

@@ -20,9 +20,13 @@
   "packetcapture.filter_detail": "Filtered by \"%s\", Type: %s",
   "packetcapture.button.remove": "Remove",
   "packetcapture.remove_all": "Remove All Filters",
+  "packetcapture.restore_default": "Restore Default",
   "packetcapture.reload": "Reload",
   "packetcapture.add_filter": "Add Packet Filter",
   "packetcapture.filtered_by": "Filtered by",
   "packetcapture.type": "Type: %s",
-  "packetcapture.back_to_details": "Back to Packet Details Screen"
+  "packetcapture.back_to_details": "Back to Packet Details Screen",
+  "packetcapture.config.title": "Config",
+  "packetcapture.config.packetFlow": "Show Packet Direction",
+  "packetcapture.config.packetNamePostfix": "Show Postfix of Packets' Name"
 }

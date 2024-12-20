@@ -21,13 +21,13 @@ import java.util.List;
 
 @OnlyIn(Dist.CLIENT)
 public class PacketListScreen extends Screen {
-    private static final Component TITLE = Component.translatable(PacketCapture.MOD_ID + ".packetListScreen.title").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component START_CAPTURING = Component.translatable(PacketCapture.MOD_ID + ".start_cap").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component STOP_CAPTURING = Component.translatable(PacketCapture.MOD_ID + ".stop_cap").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component CLEAR = Component.translatable(PacketCapture.MOD_ID + ".clear").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component SENT = Component.translatable(PacketCapture.MOD_ID + ".sent").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component RECEIVED = Component.translatable(PacketCapture.MOD_ID + ".received").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
-    private static final Component AUTO_SCROLL = Component.translatable(PacketCapture.MOD_ID + ".auto_scroll").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+    private static final Component TITLE = Component.translatable(PacketCapture.MOD_ID + ".packetListScreen.title");
+    private static final Component START_CAPTURING = Component.translatable(PacketCapture.MOD_ID + ".start_cap");
+    private static final Component STOP_CAPTURING = Component.translatable(PacketCapture.MOD_ID + ".stop_cap");
+    private static final Component CLEAR = Component.translatable(PacketCapture.MOD_ID + ".clear");
+    private static final Component SENT = Component.translatable(PacketCapture.MOD_ID + ".sent");
+    private static final Component RECEIVED = Component.translatable(PacketCapture.MOD_ID + ".received");
+    private static final Component AUTO_SCROLL = Component.translatable(PacketCapture.MOD_ID + ".auto_scroll");
     private final PacketCapture capture;
     @Nullable
     private Screen parent;
@@ -181,7 +181,7 @@ public class PacketListScreen extends Screen {
         }
 
         private final class Entry extends ObjectSelectionList.Entry<Entry> {
-            private static final Component TEXT = Component.translatable(PacketCapture.MOD_ID + ".button.show.details").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+            private static final Component TEXT = Component.translatable(PacketCapture.MOD_ID + ".button.show.details");
             private final PacketDetails packetDetails;
             private final Button details;
 

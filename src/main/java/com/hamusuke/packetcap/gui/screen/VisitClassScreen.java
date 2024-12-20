@@ -14,7 +14,7 @@ import net.minecraft.network.chat.Component;
 import javax.annotation.Nullable;
 
 public class VisitClassScreen extends Screen {
-    private static final Component BACK_TO_DETAILS = Component.translatable(PacketCapture.MOD_ID + ".back_to_details").withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
+    private static final Component BACK_TO_DETAILS = Component.translatable(PacketCapture.MOD_ID + ".back_to_details");
     private final PacketDetailsScreen packetDetailsScreen;
     @Nullable
     private final Screen parent;
