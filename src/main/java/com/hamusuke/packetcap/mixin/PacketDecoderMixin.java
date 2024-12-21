@@ -26,21 +26,25 @@ public class PacketDecoderMixin {
     @Inject(method = "decode", at = @At("HEAD"))
     private void decode(ChannelHandlerContext context, ByteBuf buf, List<Object> out, CallbackInfo ci) {
         var capture = PacketCapture.getInstance();
-        if (!capture.isCapturing()) {
+        if (!capture.isCapturing() || Minecraft.getInstance().hasSingleplayerServer()) {
             return;
         }
 
         var byteBuf = buf.copy();
         int i = byteBuf.readableBytes();
         if (i == 0) {
+            byteBuf.release();
             return;
         }
 
+        var delivered = byteBuf.copy();
         var packet = this.protocolInfo.codec().decode(byteBuf);
-        if (Minecraft.getInstance().hasSingleplayerServer() || packet.type().flow() == PacketFlow.SERVERBOUND || byteBuf.readableBytes() > 0) {
+        if (packet.type().flow() == PacketFlow.SERVERBOUND || byteBuf.readableBytes() > 0) {
+            byteBuf.release();
+            delivered.release();
             return;
         }
 
-        capture.addToReceived(new DedicatedServerPacketDetails(packet, buf.copy()));
+        capture.addToReceived(new DedicatedServerPacketDetails(packet, delivered));
     }
 }

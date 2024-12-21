@@ -3,9 +3,7 @@ package com.hamusuke.packetcap;
 import com.google.common.collect.*;
 import com.google.gson.Gson;
 import com.google.gson.stream.JsonWriter;
-import com.hamusuke.packetcap.clazz.visitor.PairVisitor;
 import com.hamusuke.packetcap.event.AddLayersEvent;
-import com.hamusuke.packetcap.event.RegisterClassVisitorsEvent;
 import com.hamusuke.packetcap.filter.FilterType;
 import com.hamusuke.packetcap.filter.PacketFilter;
 import com.hamusuke.packetcap.gui.overlay.PacketCaptureOverlay;
@@ -13,7 +11,6 @@ import com.hamusuke.packetcap.gui.screen.ConfigScreen;
 import com.hamusuke.packetcap.gui.screen.PacketListScreen;
 import com.hamusuke.packetcap.packet.DedicatedPacket;
 import com.hamusuke.packetcap.packet.PacketDetails;
-import com.mojang.datafixers.util.Pair;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
@@ -132,6 +129,7 @@ public final class PacketCapture {
         this.sentPacketNum.set(0L);
         this.receivedBytes.set(0L);
         this.receivedPacketNum.set(0L);
+        this.clearPackets();
     }
 
     private boolean loadCsv() {

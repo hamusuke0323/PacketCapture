@@ -16,6 +16,7 @@ public class DedicatedServerPacketDetails extends PacketDetails implements Dedic
         super(packet);
         this.hex = ImmutableList.copyOf(ByteBufUtil.prettyHexDump(data).lines().toList());
         this.size = data.readableBytes();
+        data.release();
     }
 
     @Override
