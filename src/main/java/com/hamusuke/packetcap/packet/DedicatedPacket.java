@@ -8,5 +8,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 public interface DedicatedPacket {
     int getSize();
 
+    String getFriendlySize();
+
     ImmutableList<String> getHexLines();
 }

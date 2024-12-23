@@ -28,7 +28,7 @@ public class PacketDetailsScreen extends Screen {
     private Details list;
 
     public PacketDetailsScreen(@Nullable Screen parent, PacketDetails details) {
-        super(Component.literal(details.getPacketClassName() + (details instanceof DedicatedPacket dedicatedPacket ? " (" + ByteConversion.convertBytes(dedicatedPacket.getSize()) + ")" : "")).withStyle(style -> style.withFont(PacketCapture.MONO_FONT)));
+        super(Component.literal(details.getPacketClassName() + (details instanceof DedicatedPacket d ? " (" + d.getFriendlySize() + ")" : "")).withStyle(style -> style.withFont(PacketCapture.MONO_FONT)));
         this.parent = parent;
         this.details = details;
         this.details.getVisitor().visit();
@@ -89,6 +89,11 @@ public class PacketDetailsScreen extends Screen {
             @Override
             public void render(GuiGraphics guiGraphics, int index, int top, int left, int width, int bottom, int mouseX, int mouseY, boolean hovered, float tickDelta) {
                 guiGraphics.drawCenteredString(PacketDetailsScreen.this.font, this.text, PacketDetailsScreen.this.width / 2, top, 16777215);
+            }
+
+            @Override
+            public boolean mouseClicked(double p_333902_, double p_331922_, int p_328634_) {
+                return false;
             }
         }
     }

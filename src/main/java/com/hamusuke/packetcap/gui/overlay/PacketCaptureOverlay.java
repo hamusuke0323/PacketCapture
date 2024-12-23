@@ -12,6 +12,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 @OnlyIn(Dist.CLIENT)
 public class PacketCaptureOverlay {
+    private static final int INDEX_OFFSET = 4;
     private final Minecraft mc;
     private final PacketCapture capture;
 
@@ -60,7 +61,7 @@ public class PacketCaptureOverlay {
             return;
         }
 
-        for (int i = Mth.clamp(size - 1 - this.mc.getWindow().getGuiScaledHeight() / 9 - 1, 0, size - 1); i < size; ++i) {
+        for (int i = Mth.clamp(size - 1 - this.mc.getWindow().getGuiScaledHeight() / 9 + INDEX_OFFSET, 0, size - 1); i < size; ++i) {
             var s = Component.literal(applyConfig(list.get(i).getPacketClassName())).withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
             int k = this.mc.font.width(s);
             if (k > 0) {
@@ -97,7 +98,7 @@ public class PacketCaptureOverlay {
             return;
         }
 
-        for (int i = Mth.clamp(size - 1 - this.mc.getWindow().getGuiScaledHeight() / 9 - 1, 0, size - 1); i < size; ++i) {
+        for (int i = Mth.clamp(size - 1 - this.mc.getWindow().getGuiScaledHeight() / 9 + INDEX_OFFSET, 0, size - 1); i < size; ++i) {
             var s = Component.literal(applyConfig(list.get(i).getPacketClassName())).withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
             int k = this.mc.font.width(s);
             if (k > 0) {

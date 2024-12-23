@@ -199,7 +199,7 @@ public class PacketListScreen extends Screen {
 
             @Override
             public void render(GuiGraphics guiGraphics, int i, int top, int i2, int i3, int i4, int mouseX, int mouseY, boolean isHovered, float tickDelta) {
-                var text = Component.literal(this.packetDetails.getPacketClassName() + (this.packetDetails instanceof DedicatedPacket dedicatedPacket ? " (" + ByteConversion.convertBytes(dedicatedPacket.getSize()) + ")" : ""));
+                var text = Component.literal(this.packetDetails.getPacketClassName() + (this.packetDetails instanceof DedicatedPacket d ? " (" + d.getFriendlySize() + ")" : ""));
                 text.withStyle(style -> style.withFont(PacketCapture.MONO_FONT));
                 var width = PacketListScreen.this.font.width(text);
                 var x = guiGraphics.drawString(PacketListScreen.this.font, text, (this.list.getRight() / 2 - (width + 50) / 2), top + 1, 16777215);

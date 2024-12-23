@@ -45,6 +45,7 @@ public class PacketDecoderMixin {
             return;
         }
 
+        byteBuf.release();
         capture.addToReceived(new DedicatedServerPacketDetails(packet, delivered));
     }
 }
