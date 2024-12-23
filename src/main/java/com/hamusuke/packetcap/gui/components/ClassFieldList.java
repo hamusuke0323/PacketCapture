@@ -11,9 +11,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
+import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
+
+import java.awt.*;
 
 public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractEntry> {
     public ClassFieldList(Minecraft minecraft, int width, int height, int top, int itemHeight, ClassVisitor visitor, PacketDetailsScreen packetDetailsScreen, Screen parent) {
@@ -93,6 +96,7 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
 
     protected final class TextEntry extends AbstractEntry {
         private final FormattedCharSequence text;
+        private final Rectangle textBB = new Rectangle(0, 0, 0, 0);
 
         public TextEntry(FormattedCharSequence text) {
             this.text = text;
@@ -105,7 +109,13 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
 
         @Override
         public void render(GuiGraphics guiGraphics, int i, int top, int i2, int i3, int i4, int i5, int i6, boolean b, float v) {
-            guiGraphics.drawString(ClassFieldList.this.minecraft.font, this.text, ClassFieldList.this.width / 9 - 10, top, 16777215);
+            int posX = ClassFieldList.this.width / 9 - 10;
+            int x = guiGraphics.drawString(ClassFieldList.this.minecraft.font, this.text, posX, top, 16777215);
+            this.textBB.setBounds(posX - 3, top, x - posX + 3, ClassFieldList.this.minecraft.font.lineHeight);
+        }
+
+        public Rectangle getTextBB() {
+            return this.textBB;
         }
 
         @Override

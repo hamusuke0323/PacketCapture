@@ -9,6 +9,7 @@ import java.lang.reflect.Field;
 import java.util.List;
 
 public class ClassVisitor {
+    public static final ClassVisitor EMPTY = new ClassVisitor();
     protected final Class<?> clazz;
     protected final String className;
     protected final Object instance;
@@ -19,6 +20,10 @@ public class ClassVisitor {
         this.clazz = clazz;
         this.className = getClassName(clazz);
         this.instance = instance;
+    }
+
+    private ClassVisitor() {
+        this(Object.class, new Object());
     }
 
     private static List<Field> getFields(Class<?> clazz) {

@@ -5,7 +5,7 @@
   "packetcapture.start_cap": "Start Capturing Packet",
   "packetcapture.stop_cap": "Stop Capturing Packet",
   "packetcapture.button.show.details": "Detail",
-  "packetcapture.packetData": "Packet Data",
+  "packetcapture.packetData": "Hex Dump",
   "packetcapture.sent": "Sent",
   "packetcapture.received": "Received",
   "packetcapture.sent.detail": "Sent (%s packets)",

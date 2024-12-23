@@ -20,7 +20,8 @@ public class ClassVisitors {
         registerClassVisitor(o -> o.getClass().isArray(), o -> new ArrayVisitor(o.getClass(), ObjectUtil.toArray(o)));
         registerClassVisitor(o -> o instanceof Collection<?>, o -> (Collection<?>) o, o -> new CollectionVisitor(o.getClass(), o));
         registerClassVisitor(o -> o instanceof Map<?, ?>, o -> (Map<?, ?>) o, o -> new MapVisitor(o.getClass(), o));
-        registerClassVisitor(o -> o instanceof String || Primitives.isWrapperType(o.getClass()) || o.getClass().isEnum(), o -> new StringConvertibleClassVisitor(o.getClass(), o));
+        registerClassVisitor(o -> o.getClass().isEnum(), o -> (Enum<?>) o, e -> new EnumVisitor(e.getClass(), e));
+        registerClassVisitor(o -> o instanceof String || Primitives.isWrapperType(o.getClass()), o -> new StringConvertibleClassVisitor(o.getClass(), o));
         registerClassVisitor(o -> o instanceof Pair<?, ?>, o -> (Pair<?, ?>) o, p -> new PairVisitor(p.getClass(), p));
 
         var e = ModLoader.get().postEventWithReturn(new RegisterClassVisitorsEvent());
