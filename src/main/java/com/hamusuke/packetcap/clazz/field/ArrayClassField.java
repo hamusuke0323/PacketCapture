@@ -25,4 +25,9 @@ public class ArrayClassField implements ClassField {
     public String toString() {
         return this.getDescription();
     }
+
+    @Override
+    public boolean isStatic() {
+        return false;
+    }
 }

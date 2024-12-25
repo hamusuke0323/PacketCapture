@@ -4,20 +4,31 @@ import com.google.common.collect.*;
 import com.google.gson.Gson;
 import com.google.gson.stream.JsonWriter;
 import com.hamusuke.packetcap.event.AddLayersEvent;
+import com.hamusuke.packetcap.event.CreateMapForHexDumpHighlightEvent;
 import com.hamusuke.packetcap.filter.FilterType;
 import com.hamusuke.packetcap.filter.PacketFilter;
 import com.hamusuke.packetcap.gui.overlay.PacketCaptureOverlay;
 import com.hamusuke.packetcap.gui.screen.ConfigScreen;
 import com.hamusuke.packetcap.gui.screen.PacketListScreen;
+import com.hamusuke.packetcap.network.WrittenBytesLoggingByteBuf;
 import com.hamusuke.packetcap.packet.DedicatedPacket;
+import com.hamusuke.packetcap.packet.DedicatedServerPacketDetails;
 import com.hamusuke.packetcap.packet.PacketDetails;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.util.ReferenceCountUtil;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.PacketListener;
+import net.minecraft.network.ProtocolInfo;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.GameShuttingDownEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -38,6 +49,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -45,6 +60,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class PacketCapture {
     public static final String MOD_ID = "packetcapture";
     public static final ResourceLocation MONO_FONT = new ResourceLocation(MOD_ID, "mono");
+    private static final ExecutorService SENT_PACKET_DETAIL_RETRIEVER = Executors.newSingleThreadExecutor(r -> new Thread(r, "Sent-Packet-Detail-Retriever"));
+    private static final ExecutorService RECEIVED_PACKET_DETAIL_RETRIEVER = Executors.newSingleThreadExecutor(r -> new Thread(r, "Received-Packet-Detail-Retriever"));
     private static final Logger LOGGER = LogManager.getLogger();
     private static final int MAX_PACKET_SIZE = 16384;
     private static final KeyMapping RENDER_CAPTURE_OVERLAY = new KeyMapping(MOD_ID + ".key.render_cap", GLFW.GLFW_KEY_HOME, KeyMapping.CATEGORY_MISC);
@@ -62,6 +79,7 @@ public final class PacketCapture {
             new PacketFilter("Bundle", FilterType.CONTAINS),
             new PacketFilter("MovePlayer", FilterType.CONTAINS),
             new PacketFilter("Sound", FilterType.CONTAINS),
+            new PacketFilter("Swing", FilterType.CONTAINS),
             new PacketFilter("KeepAlive", FilterType.CONTAINS),
             new PacketFilter("Ping", FilterType.CONTAINS),
             new PacketFilter("Pong", FilterType.CONTAINS),
@@ -130,6 +148,141 @@ public final class PacketCapture {
         this.receivedBytes.set(0L);
         this.receivedPacketNum.set(0L);
         this.clearPackets();
+    }
+
+    @SubscribeEvent
+    public void onGameShuttingDown(GameShuttingDownEvent e) {
+        shutdownExecutor(SENT_PACKET_DETAIL_RETRIEVER);
+        shutdownExecutor(RECEIVED_PACKET_DETAIL_RETRIEVER);
+    }
+
+    @SubscribeEvent
+    public void onCreateMap(CreateMapForHexDumpHighlightEvent e) {
+        var className = e.getDetails().getVisitor().getClassName();
+        var fields = e.getFields();
+        var logs = e.getDetails().getWriteLog();
+        if (fields.size() >= 6 && logs.size() == 6 && className.contains("ServerboundMovePlayerPacket$PosRot")) { // special case
+            for (int i = 0; i < 6; i++) {
+                e.registerHighlight(fields.get(i).getName(), logs.get(i));
+            }
+            return;
+        }
+
+        if (fields.size() >= 6 && logs.size() == 4 && className.contains("ServerboundMovePlayerPacket$Pos")) {
+            for (int i = 0; i < 3; i++) {
+                e.registerHighlight(fields.get(i).getName(), logs.get(i));
+            }
+
+            e.registerHighlight(fields.get(5).getName(), logs.get(3));
+            return;
+        }
+
+        if (fields.size() >= 6 && logs.size() == 3 && className.contains("ServerboundMovePlayerPacket$Rot")) {
+            for (int i = 3; i < 6; i++) {
+                e.registerHighlight(fields.get(i).getName(), logs.get(i - 3));
+            }
+
+            return;
+        }
+
+        if (fields.size() >= 6 && logs.size() == 1 && className.contains("ServerboundMovePlayerPacket$StatusOnly")) {
+            e.registerHighlight(fields.get(5).getName(), logs.getFirst());
+            return;
+        }
+
+        if (className.contains("ClientboundMoveEntityPacket$PosRot") && fields.size() >= 7 && logs.size() == 7) {
+            for (int i = 0; i < 7; i++) {
+                e.registerHighlight(fields.get(i).getName(), logs.get(i));
+            }
+
+            return;
+        }
+
+        if (className.contains("ClientboundMoveEntityPacket$Pos") && fields.size() >= 7 && logs.size() == 5) {
+            for (int i = 0; i < 4; i++) {
+                e.registerHighlight(fields.get(i).getName(), logs.get(i));
+            }
+
+            e.registerHighlight(fields.get(6).getName(), logs.get(4));
+            return;
+        }
+
+        if (className.contains("ClientboundMoveEntityPacket$Rot") && fields.size() >= 7 && logs.size() == 4) {
+            e.registerHighlight(fields.getFirst().getName(), logs.getFirst());
+            for (int i = 4; i < 7; i++) {
+                e.registerHighlight(fields.get(i).getName(), logs.get(i - 3));
+            }
+        }
+    }
+
+    private static void shutdownExecutor(ExecutorService e) {
+        e.shutdown();
+
+        boolean f;
+        try {
+            f = e.awaitTermination(3L, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            f = false;
+        }
+
+        if (!f) {
+            e.shutdownNow();
+        }
+    }
+
+    public <T extends PacketListener> void onEncodingPacketInMultiplayer(ProtocolInfo<T> protocolInfo, Packet<T> packet, ByteBuf byteBuf) {
+        if (Minecraft.getInstance().hasSingleplayerServer() || packet.type().flow() == PacketFlow.CLIENTBOUND || !this.isCapturing()) {
+            return;
+        }
+
+        var copied = byteBuf.copy();
+
+        CompletableFuture.supplyAsync(() -> {
+                    var newBuf = new WrittenBytesLoggingByteBuf(Unpooled.buffer());
+                    protocolInfo.codec().encode(newBuf, packet);
+                    newBuf.onFinishWriting();
+                    newBuf.release();
+
+                    return new DedicatedServerPacketDetails(packet, copied, newBuf);
+                }, SENT_PACKET_DETAIL_RETRIEVER)
+                .whenComplete((dedicatedServerPacketDetails, throwable) -> {
+                    this.addToSent(dedicatedServerPacketDetails);
+                });
+    }
+
+    public <T extends PacketListener> void onDecodingPacketInMultiplayer(ProtocolInfo<T> protocolInfo, ByteBuf buf) {
+        if (!this.isCapturing() || Minecraft.getInstance().hasSingleplayerServer()) {
+            return;
+        }
+
+        var byteBuf = buf.copy();
+        var delivered = byteBuf.copy();
+
+        CompletableFuture.supplyAsync(() -> {
+                    int i = byteBuf.readableBytes();
+                    if (i == 0) {
+                        return null;
+                    }
+
+                    var packet = protocolInfo.codec().decode(byteBuf);
+                    if (packet.type().flow() == PacketFlow.SERVERBOUND || byteBuf.readableBytes() > 0) {
+                        return null;
+                    }
+
+                    var newBuf = new WrittenBytesLoggingByteBuf(Unpooled.buffer());
+                    protocolInfo.codec().encode(newBuf, packet);
+                    newBuf.onFinishWriting();
+                    newBuf.release();
+
+                    return new DedicatedServerPacketDetails(packet, delivered, newBuf);
+                }, RECEIVED_PACKET_DETAIL_RETRIEVER)
+                .whenComplete((details, throwable) -> {
+                    ReferenceCountUtil.release(byteBuf);
+
+                    if (details != null) {
+                        this.addToReceived(details);
+                    }
+                });
     }
 
     private boolean loadCsv() {

@@ -6,20 +6,24 @@ import com.hamusuke.packetcap.clazz.visitor.StringConvertibleClassVisitor;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 
 public class SimpleClassField implements ClassField {
     private final String fieldName;
     @Nullable
     private final ClassVisitor visitor;
+    private final boolean isStatic;
     private final boolean errorOccurred;
 
     public SimpleClassField(Field field, Object instance) {
         String name;
         boolean error = false;
         ClassVisitor visitor = null;
+        boolean isStatic = false;
 
         try {
             name = field.getName();
+            isStatic = Modifier.isStatic(field.getModifiers());
 
             if (field.trySetAccessible()) {
                 var obj = field.get(instance);
@@ -35,6 +39,7 @@ public class SimpleClassField implements ClassField {
         this.fieldName = PacketCapture.getInstance().deobfuscate(name);
         this.visitor = visitor;
         this.errorOccurred = error;
+        this.isStatic = isStatic;
     }
 
     @Override
@@ -53,7 +58,17 @@ public class SimpleClassField implements ClassField {
     }
 
     @Override
+    public String getName() {
+        return this.fieldName;
+    }
+
+    @Override
     public String toString() {
         return this.getDescription();
+    }
+
+    @Override
+    public boolean isStatic() {
+        return this.isStatic;
     }
 }

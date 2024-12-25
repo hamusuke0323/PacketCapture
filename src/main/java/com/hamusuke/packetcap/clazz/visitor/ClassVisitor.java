@@ -27,12 +27,13 @@ public class ClassVisitor {
     }
 
     private static List<Field> getFields(Class<?> clazz) {
-        var fields = Lists.newArrayList(clazz.getDeclaredFields());
+        var fields = Lists.<Field>newArrayList();
         var superclass = clazz.getSuperclass();
         if (superclass != null) {
             fields.addAll(getFields(superclass));
         }
 
+        fields.addAll(List.of(clazz.getDeclaredFields()));
         return fields;
     }
 

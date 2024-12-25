@@ -9,4 +9,9 @@ public interface MapField extends ClassField {
     default String getDescription() {
         return this.getKeyVisitor() + "->" + this.getVisitor();
     }
+
+    @Override
+    default boolean isStatic() {
+        return false;
+    }
 }

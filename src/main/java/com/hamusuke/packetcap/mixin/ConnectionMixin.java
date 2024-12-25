@@ -12,6 +12,7 @@ import net.minecraft.network.protocol.PacketFlow;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -43,6 +44,7 @@ public abstract class ConnectionMixin {
         }
     }
 
+    @Unique
     private boolean isClientSide(PacketCapture capture) {
         return this.receiving == PacketFlow.CLIENTBOUND && capture.isCapturing() && Minecraft.getInstance().hasSingleplayerServer();
     }

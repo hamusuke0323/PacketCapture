@@ -34,4 +34,10 @@ public interface ClassField {
     }
 
     String getDescription();
+
+    default String getName() {
+        return this.getDescription();
+    }
+
+    boolean isStatic();
 }

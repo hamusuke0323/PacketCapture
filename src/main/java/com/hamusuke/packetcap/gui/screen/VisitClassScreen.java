@@ -71,11 +71,11 @@ public class VisitClassScreen extends Screen {
                 var value = mapField.getVisitor();
 
                 this.addEntry(new TextEntry(Component.literal("{").withStyle(style -> style.withFont(PacketCapture.MONO_FONT)).getVisualOrderText()));
-                this.addEntry(key, key.toString(), VisitClassScreen.this.packetDetailsScreen, VisitClassScreen.this);
+                this.addEntry(mapField, key, key.toString(), VisitClassScreen.this.packetDetailsScreen, VisitClassScreen.this);
                 this.addEntry(new TextEntry(Component.literal("").getVisualOrderText()));
                 this.addEntry(new TextEntry(Component.literal("->").withStyle(style -> style.withFont(PacketCapture.MONO_FONT)).getVisualOrderText()));
                 this.addEntry(new TextEntry(Component.literal("").getVisualOrderText()));
-                this.addEntry(value, value.toString(), VisitClassScreen.this.packetDetailsScreen, VisitClassScreen.this);
+                this.addEntry(mapField, value, value == null ? "null" : value.toString(), VisitClassScreen.this.packetDetailsScreen, VisitClassScreen.this);
                 this.addEntry(new TextEntry(Component.literal("}" + (last ? "" : ",")).withStyle(style -> style.withFont(PacketCapture.MONO_FONT)).getVisualOrderText()));
                 this.addEntry(new TextEntry(Component.literal("").getVisualOrderText()));
                 this.addEntry(new TextEntry(Component.literal("").getVisualOrderText()));

@@ -1,6 +1,7 @@
 package com.hamusuke.packetcap.gui.components;
 
 import com.hamusuke.packetcap.PacketCapture;
+import com.hamusuke.packetcap.clazz.field.ClassField;
 import com.hamusuke.packetcap.clazz.field.MapField;
 import com.hamusuke.packetcap.clazz.visitor.ArrayVisitor;
 import com.hamusuke.packetcap.clazz.visitor.ClassVisitor;
@@ -11,12 +12,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
-import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.util.Mth;
 
-import java.awt.*;
+import java.util.Objects;
 
 public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractEntry> {
     public ClassFieldList(Minecraft minecraft, int width, int height, int top, int itemHeight, ClassVisitor visitor, PacketDetailsScreen packetDetailsScreen, Screen parent) {
@@ -32,7 +33,7 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
         for (int i = 0; i < fields.size(); i++) {
             var field = fields.get(i);
             var last = i >= fields.size() - 1;
-            this.addEntry(field.getVisitor(), field.getDescription() + (array && !last ? "," : ""), packetDetailsScreen, parent);
+            this.addEntry(field, field.getVisitor(), field.getDescription() + (array && !last ? "," : ""), packetDetailsScreen, parent);
             this.addEntry(new TextEntry(Component.literal(" ").withStyle(style -> style.withFont(PacketCapture.MONO_FONT)).getVisualOrderText()));
         }
 
@@ -45,16 +46,24 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
     protected void renderSelection(GuiGraphics p_283589_, int p_240142_, int p_240143_, int p_240144_, int p_240145_, int p_240146_) {
     }
 
-    protected void addEntry(ClassVisitor visitor, String desc, PacketDetailsScreen packetDetailsScreen, Screen parent) {
+    protected void addEntry(ClassField field, ClassVisitor visitor, String desc, PacketDetailsScreen packetDetailsScreen, Screen parent) {
         var simple = visitor == null || visitor.isStringConvertibleClass();
         minecraft.font.split(Component.literal(desc).withStyle(style -> style.withFont(PacketCapture.MONO_FONT)), this.width * 2 / 3).forEach(formattedCharSequence -> {
-            this.addEntry(simple ? new TextEntry(formattedCharSequence) : new VisitableClassEntry(formattedCharSequence, packetDetailsScreen, parent, visitor));
+            this.addEntry(simple ? new MemberEntry(formattedCharSequence, field) : new VisitableClassEntry(formattedCharSequence, field, packetDetailsScreen, parent, visitor));
         });
     }
 
     @Override
     public boolean isMouseOver(double p_93479_, double p_93480_) {
         return p_93480_ >= (double) this.getY() && p_93480_ <= (double) this.getBottom();
+    }
+
+    public int getHeaderHeight() {
+        return this.headerHeight;
+    }
+
+    public int getItemHeight() {
+        return this.itemHeight;
     }
 
     @Override
@@ -91,12 +100,28 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
         return this.width - 6;
     }
 
-    protected abstract static class AbstractEntry extends Entry<AbstractEntry> {
+    @Override
+    public int getRowLeft() {
+        return this.width / 9 - 10;
     }
 
-    protected final class TextEntry extends AbstractEntry {
+    @Override
+    public int getRowWidth() {
+        return this.width * 2 / 3;
+    }
+
+    public abstract static class AbstractEntry extends Entry<AbstractEntry> {
+        @Override
+        public boolean isMouseOver(double p_93537_, double p_93538_) {
+            int $$6 = Mth.floor(p_93538_ - (double) this.list.getY()) - ((ClassFieldList) this.list).getHeaderHeight() + (int) this.list.getScrollAmount() - 4;
+            int $$7 = $$6 / ((ClassFieldList) this.list).getItemHeight();
+            var e = p_93537_ >= this.list.getRowLeft() && $$7 >= 0 && $$6 >= 0 && $$7 < ((ClassFieldList) this.list).getItemCount() ? this.list.children().get($$7) : null;
+            return Objects.equals(e, this);
+        }
+    }
+
+    protected class TextEntry extends AbstractEntry {
         private final FormattedCharSequence text;
-        private final Rectangle textBB = new Rectangle(0, 0, 0, 0);
 
         public TextEntry(FormattedCharSequence text) {
             this.text = text;
@@ -108,14 +133,8 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
         }
 
         @Override
-        public void render(GuiGraphics guiGraphics, int i, int top, int i2, int i3, int i4, int i5, int i6, boolean b, float v) {
-            int posX = ClassFieldList.this.width / 9 - 10;
-            int x = guiGraphics.drawString(ClassFieldList.this.minecraft.font, this.text, posX, top, 16777215);
-            this.textBB.setBounds(posX - 3, top, x - posX + 3, ClassFieldList.this.minecraft.font.lineHeight);
-        }
-
-        public Rectangle getTextBB() {
-            return this.textBB;
+        public void render(GuiGraphics guiGraphics, int i, int top, int rowLeft, int width, int height, int mouseX, int mouseY, boolean isHovered, float v) {
+            guiGraphics.drawString(ClassFieldList.this.minecraft.font, this.text, rowLeft, top, 16777215);
         }
 
         @Override
@@ -124,10 +143,30 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
         }
     }
 
-    protected class VisitableClassEntry extends AbstractEntry {
+    public interface HasClassField {
+        ClassField getField();
+    }
+
+    public class MemberEntry extends TextEntry implements HasClassField {
+        protected final ClassField field;
+
+        public MemberEntry(FormattedCharSequence text, ClassField field) {
+            super(text);
+            this.field = field;
+        }
+
+        @Override
+        public ClassField getField() {
+            return this.field;
+        }
+    }
+
+    public class VisitableClassEntry extends AbstractEntry implements HasClassField {
+        protected final ClassField field;
         private final TextButton button;
 
-        public VisitableClassEntry(FormattedCharSequence msg, PacketDetailsScreen screen, Screen parent, ClassVisitor visitor) {
+        public VisitableClassEntry(FormattedCharSequence msg, ClassField field, PacketDetailsScreen screen, Screen parent, ClassVisitor visitor) {
+            this.field = field;
             this.button = new TextButton(ClassFieldList.this.minecraft.font, 0, 0, msg, p_93751_ -> {
                 ClassFieldList.this.minecraft.setScreen(new VisitClassScreen(screen, parent, visitor));
             });
@@ -139,8 +178,8 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
         }
 
         @Override
-        public void render(GuiGraphics guiGraphics, int i, int top, int i2, int i3, int i4, int mouseX, int mouseY, boolean b, float v) {
-            this.button.setX(ClassFieldList.this.width / 9 - 10);
+        public void render(GuiGraphics guiGraphics, int i, int top, int rowLeft, int i3, int i4, int mouseX, int mouseY, boolean b, float v) {
+            this.button.setX(rowLeft);
             this.button.setY(top);
             this.button.render(guiGraphics, mouseX, mouseY, v);
         }
@@ -148,6 +187,11 @@ public class ClassFieldList extends ObjectSelectionList<ClassFieldList.AbstractE
         @Override
         public boolean mouseClicked(double p_94737_, double p_94738_, int p_94739_) {
             return this.button.mouseClicked(p_94737_, p_94738_, p_94739_);
+        }
+
+        @Override
+        public ClassField getField() {
+            return this.field;
         }
     }
 }
