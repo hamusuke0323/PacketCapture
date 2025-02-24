@@ -2,6 +2,7 @@ package com.hamusuke.packetcap.clazz.visitor;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.hamusuke.packetcap.PacketCapture;
 import com.hamusuke.packetcap.clazz.field.ClassField;
 import com.hamusuke.packetcap.clazz.field.SimpleClassField;
 
@@ -18,7 +19,7 @@ public class ClassVisitor {
 
     public ClassVisitor(Class<?> clazz, Object instance) {
         this.clazz = clazz;
-        this.className = getClassName(clazz);
+        this.className = PacketCapture.getInstance().classNameDeobfuscater.deobfuscate(getClassName(clazz));
         this.instance = instance;
     }
 

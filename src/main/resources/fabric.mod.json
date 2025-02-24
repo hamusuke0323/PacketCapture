@@ -3,7 +3,7 @@
 	"id": "packetcapture",
 	"version": "${version}",
 	"name": "PacketCapture",
-	"description": "This is a mod that adds packet-capturing screen/overlay.\n\nYou can peek Minecraft network.",
+	"description": "This is a mod that adds packet-capturing screen/hud.\n\nYou can peek Minecraft network.",
 	"authors": [
 		"hamusuke2303"
 	],

@@ -1,4 +1,4 @@
-package com.hamusuke.packetcap.gui.overlay;
+package com.hamusuke.packetcap.gui.hud;
 
 import com.hamusuke.packetcap.Config;
 import com.hamusuke.packetcap.PacketCapture;
@@ -8,12 +8,12 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 
-public class PacketCaptureOverlay {
+public class PacketCaptureHud {
     private static final int INDEX_OFFSET = 4;
     private final MinecraftClient mc;
     private final PacketCapture capture;
 
-    public PacketCaptureOverlay(MinecraftClient mc, PacketCapture capture) {
+    public PacketCaptureHud(MinecraftClient mc, PacketCapture capture) {
         this.mc = mc;
         this.capture = capture;
     }

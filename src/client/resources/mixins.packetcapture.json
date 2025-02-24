@@ -11,7 +11,6 @@
   "injectors": {
     "defaultRequire": 1
   },
-  "refmap": "mixins.packetcapture.refmap.json",
   "mixins": [
     "LoginHelloS2CPacketMixin",
     "LoginKeyC2SPacketMixin"

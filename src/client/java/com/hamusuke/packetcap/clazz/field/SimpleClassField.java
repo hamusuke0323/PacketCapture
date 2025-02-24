@@ -36,7 +36,7 @@ public class SimpleClassField implements ClassField {
             name = "Could not access the field: " + e.getMessage();
         }
 
-        this.fieldName = PacketCapture.getInstance().deobfuscate(name);
+        this.fieldName = PacketCapture.getInstance().fieldNameDeobfuscater.deobfuscate(name);
         this.visitor = visitor;
         this.errorOccurred = error;
         this.isStatic = isStatic;

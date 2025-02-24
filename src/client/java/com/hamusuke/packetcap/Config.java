@@ -6,10 +6,10 @@ public class Config {
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
     private static final ForgeConfigSpec.BooleanValue SHOW_PACKET_FLOW = BUILDER
-            .comment("In overlay, whether to show packet flow: e.g. C2S or S2C")
+            .comment("In hud, whether to show packet flow: e.g. C2S or S2C")
             .define("showPacketFlow", false);
     private static final ForgeConfigSpec.BooleanValue SHOW_PACKET_NAME_POSTFIX = BUILDER
-            .comment("In overlay, whether to show postfix of packet name: e.g. ...Packet")
+            .comment("In hud, whether to show postfix of packet name: e.g. ...Packet")
             .define("showPacketNamePostfix", false);
 
     static final ForgeConfigSpec SPEC = BUILDER.build();

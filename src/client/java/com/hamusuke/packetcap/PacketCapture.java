@@ -1,11 +1,14 @@
 package com.hamusuke.packetcap;
 
-import com.google.common.collect.*;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 import com.google.gson.stream.JsonWriter;
 import com.hamusuke.packetcap.filter.FilterType;
 import com.hamusuke.packetcap.filter.PacketFilter;
-import com.hamusuke.packetcap.gui.overlay.PacketCaptureOverlay;
+import com.hamusuke.packetcap.gui.hud.PacketCaptureHud;
 import com.hamusuke.packetcap.gui.screen.PacketListScreen;
 import com.hamusuke.packetcap.highlight.DataHighlightInstruction;
 import com.hamusuke.packetcap.highlight.DataHighlightInstructions;
@@ -15,6 +18,7 @@ import fuzs.forgeconfigapiport.fabric.api.forge.v4.ForgeConfigRegistry;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.ReferenceCountUtil;
+import it.unimi.dsi.fastutil.Pair;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -57,12 +61,12 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class PacketCapture implements ClientModInitializer {
     public static final String MOD_ID = "packetcapture";
     public static final Identifier MONO_FONT = Identifier.of(MOD_ID, "mono");
-    private static final Identifier PACKET_CAPTURE_OVERLAY_LAYER_ID = Identifier.of(MOD_ID, "layer");
+    private static final Identifier PACKET_CAPTURE_HUD_LAYER_ID = Identifier.of(MOD_ID, "layer");
     private static final ExecutorService SENT_PACKET_DETAIL_RETRIEVER = Executors.newSingleThreadExecutor(r -> new Thread(r, "Sent-Packet-Detail-Retriever"));
     private static final ExecutorService RECEIVED_PACKET_DETAIL_RETRIEVER = Executors.newSingleThreadExecutor(r -> new Thread(r, "Received-Packet-Detail-Retriever"));
     private static final Logger LOGGER = LogManager.getLogger();
     private static final int MAX_PACKET_SIZE = 16384;
-    private static final KeyBinding RENDER_CAPTURE_OVERLAY = new KeyBinding(MOD_ID + ".key.render_cap", GLFW.GLFW_KEY_HOME, KeyBinding.MISC_CATEGORY);
+    private static final KeyBinding RENDER_CAPTURE_HUD = new KeyBinding(MOD_ID + ".key.render_cap", GLFW.GLFW_KEY_HOME, KeyBinding.MISC_CATEGORY);
     private static final KeyBinding OPEN_PACKET_LIST_SCREEN = new KeyBinding(MOD_ID + ".key.open.packetListScreen", GLFW.GLFW_KEY_END, KeyBinding.MISC_CATEGORY);
     private static final Gson GSON = new Gson();
     private static final Set<PacketFilter> DEFAULT_PACKET_FILTERS = Set.of(
@@ -89,12 +93,11 @@ public final class PacketCapture implements ClientModInitializer {
     );
     private static PacketCapture instance;
     private final MinecraftClient mc;
-    private final PacketCaptureOverlay overlay;
+    private final PacketCaptureHud hud;
     private final PacketListScreen screen;
     private final Path filterConfig;
-    private final Path fieldsCsv;
-    private final boolean deobfuscationEnabled;
-    private final Map<String, String> deobMap = Maps.newHashMap();
+    public final Deobfuscation classNameDeobfuscater;
+    public final Deobfuscation fieldNameDeobfuscater;
     private final Set<PacketFilter> packetFilters = Collections.synchronizedSet(Sets.newHashSet());
     private final AtomicBoolean capturing = new AtomicBoolean(true);
     private final AtomicLong sentBytes = new AtomicLong();
@@ -109,22 +112,35 @@ public final class PacketCapture implements ClientModInitializer {
         instance = this;
 
         this.mc = MinecraftClient.getInstance();
-        this.overlay = new PacketCaptureOverlay(this.mc, this);
+        this.hud = new PacketCaptureHud(this.mc, this);
         this.screen = new PacketListScreen(this);
         var configDir = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID);
         this.filterConfig = configDir.resolve("packet_filter.json");
-        this.fieldsCsv = configDir.resolve("fields.csv");
-        this.deobfuscationEnabled = this.loadCsv();
+        var path = configDir.resolve("fields");
+        this.classNameDeobfuscater = new Deobfuscation(path, s -> s.startsWith("c") && s.split(" ").length == 4, text -> {
+            var split = text.split(" ");
+            var named = split[1].split("/");
+            var intermediary = split[3].split("/");
+
+            return Pair.of(intermediary[intermediary.length - 1], named[named.length - 1]);
+        });
+        this.fieldNameDeobfuscater = new Deobfuscation(path, s -> s.startsWith("f") && s.split(" ").length == 5, text -> {
+            var split = text.split(" ");
+            var named = split[2];
+            var intermediary = split[4];
+
+            return Pair.of(intermediary, named);
+        });
         this.loadFilters();
     }
 
     @Override
     public void onInitializeClient() {
-        KeyBindingHelper.registerKeyBinding(RENDER_CAPTURE_OVERLAY);
+        KeyBindingHelper.registerKeyBinding(RENDER_CAPTURE_HUD);
         KeyBindingHelper.registerKeyBinding(OPEN_PACKET_LIST_SCREEN);
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-            if (RENDER_CAPTURE_OVERLAY.wasPressed()) {
+            if (RENDER_CAPTURE_HUD.wasPressed()) {
                 this.showCapture = !this.showCapture;
                 if (this.mc.getDebugHud().shouldShowDebugHud() && this.showCapture) {
                     this.mc.getDebugHud().toggleDebugHud();
@@ -150,9 +166,9 @@ public final class PacketCapture implements ClientModInitializer {
         });
 
         HudLayerRegistrationCallback.EVENT.register(w -> {
-            w.addLayer(IdentifiedLayer.of(PACKET_CAPTURE_OVERLAY_LAYER_ID, (context, tickCounter) -> {
+            w.addLayer(IdentifiedLayer.of(PACKET_CAPTURE_HUD_LAYER_ID, (context, tickCounter) -> {
                 if (this.showCapture) {
-                    this.overlay.render(context);
+                    this.hud.render(context);
                 }
             }));
         });
@@ -264,25 +280,6 @@ public final class PacketCapture implements ClientModInitializer {
                         this.addToReceived(details);
                     }
                 });
-    }
-
-    private boolean loadCsv() {
-        var file = this.fieldsCsv.toFile();
-        if (!file.exists() || !file.isFile()) {
-            return false;
-        }
-
-        try {
-            this.deobMap.clear();
-            for (var line : Files.readAllLines(this.fieldsCsv, StandardCharsets.UTF_8)) {
-                var dataArray = line.split(",");
-                this.deobMap.put(dataArray[0], dataArray[1]);
-            }
-            return true;
-        } catch (Throwable e) {
-            LOGGER.warn("Error occurred while loading csv file", e);
-            return false;
-        }
     }
 
     public synchronized void loadFilters() {
@@ -430,9 +427,5 @@ public final class PacketCapture implements ClientModInitializer {
 
     public long getReceivedPacketNum() {
         return this.receivedPacketNum.get();
-    }
-
-    public String deobfuscate(String obfuscated) {
-        return this.deobfuscationEnabled ? this.deobMap.getOrDefault(obfuscated, obfuscated) : obfuscated;
     }
 }

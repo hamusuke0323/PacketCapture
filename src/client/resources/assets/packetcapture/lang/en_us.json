@@ -1,5 +1,5 @@
 {
-  "packetcapture.key.render_cap": "Render Packet Capture Overlay",
+  "packetcapture.key.render_cap": "Render Packet Capture Hud",
   "packetcapture.key.open.packetListScreen": "Open Packets List Screen",
   "packetcapture.packetListScreen.title": "Sent/Received Packets List",
   "packetcapture.start_cap": "Start Capturing Packet",

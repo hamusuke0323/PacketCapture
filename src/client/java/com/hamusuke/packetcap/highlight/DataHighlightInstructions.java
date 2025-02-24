@@ -2,6 +2,7 @@ package com.hamusuke.packetcap.highlight;
 
 import com.google.common.collect.ForwardingMultimap;
 import com.google.common.collect.Maps;
+import com.hamusuke.packetcap.event.RegisterHighlightInstructionEvent;
 import com.hamusuke.packetcap.highlight.DataHighlightInstruction.PacketDataHighlighterBuilder;
 import com.hamusuke.packetcap.invoker.LoginHelloS2CPacketAccessor;
 import com.hamusuke.packetcap.invoker.LoginKeyC2SPacketAccessor;
@@ -9,7 +10,6 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
 import io.netty.buffer.ByteBuf;
-import it.unimi.dsi.fastutil.ints.IntList;
 import net.minecraft.component.ComponentChanges;
 import net.minecraft.component.MergedComponentMap;
 import net.minecraft.item.ItemStack;
@@ -41,7 +41,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -50,26 +49,27 @@ import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.*;
 public class DataHighlightInstructions {
     private static final Map<Class<?>, DataHighlightInstruction<? extends ByteBuf, ?>> HIGHLIGHTERS = Maps.newHashMap();
 
-    private static final DataHighlightInstruction<ByteBuf, Property> PROPERTY = register(Property.class, builder -> builder
+    public static final DataHighlightInstruction<ByteBuf, Property> PROPERTY = register(Property.class, builder -> builder
             .field(STRING.withDescription(s -> "Property Name: " + s), Property::name)
             .field(STRING.withDescription(s -> "Property Value: " + s), Property::value)
             .sub(bufNullable(String.class, s -> "Signature", (buf, value) -> StringEncoding.encode(buf, value, 1024)), Property::signature));
 
-    private static final DataHighlightInstruction<ByteBuf, PropertyMap> PROPERTY_MAP = register(PropertyMap.class, builder -> builder
+    public static final DataHighlightInstruction<ByteBuf, PropertyMap> PROPERTY_MAP = register(PropertyMap.class, builder -> builder
             .list(PROPERTY, ForwardingMultimap::values));
 
-    private static final DataHighlightInstruction<ByteBuf, GameProfile> GAME_PROFILE = register(GameProfile.class, builder -> builder
+    public static final DataHighlightInstruction<ByteBuf, GameProfile> GAME_PROFILE = register(GameProfile.class, builder -> builder
             .field(UUID.withDescription(uuid -> "UUID: " + uuid), GameProfile::getId)
             .field(STRING.withDescription(s -> "Name: " + s), GameProfile::getName)
             .sub(PROPERTY_MAP, GameProfile::getProperties));
 
-    private static final DataHighlightInstruction<RegistryByteBuf, RegistryKey> REGISTRY_KEY = registry(RegistryKey.class, builder -> builder
+    public static final DataHighlightInstruction<RegistryByteBuf, RegistryKey> REGISTRY_KEY = registry(RegistryKey.class, builder -> builder
             .packetEncoder(PacketByteBuf::writeRegistryKey, RegistryKey::toString, Function.identity()));
 
-    private static final DataHighlightInstruction<PacketByteBuf, byte[]> BYTE_ARRAY_WITH_LEN = packet(byte[].class, builder -> builder
+    public static final DataHighlightInstruction<PacketByteBuf, byte[]> BYTE_ARRAY_WITH_LEN = packet(byte[].class, builder -> builder
             .field(VAR_INT.withDescription(length -> "Byte Array Length: " + length), bytes -> bytes.length)
             .field(BYTE_ARRAY.withDescription(bytes -> "Data"), Function.identity()));
-    private static final DataHighlightInstruction<RegistryByteBuf, ItemStack> ITEM_STACK = registry(ItemStack.class, builder -> builder
+
+    public static final DataHighlightInstruction<RegistryByteBuf, ItemStack> ITEM_STACK = registry(ItemStack.class, builder -> builder
             .field(VAR_INT.withDescription(count -> count <= 0 ? "Empty" : "Count: " + count), ItemStack::getCount, count -> count > 0)
             .packetCodec(PacketCodecs.registryEntry(RegistryKeys.ITEM), e -> "ID: " + e.getIdAsString(), ItemStack::getRegistryEntry)
             .packetCodec(ComponentChanges.PACKET_CODEC, componentChanges -> "ComponentChanges", stack -> stack.getComponents() instanceof MergedComponentMap m ? m.getChanges() : ComponentChanges.EMPTY));
@@ -157,37 +157,40 @@ public class DataHighlightInstructions {
                 .field(VAR_INT, ScreenHandlerSlotUpdateS2CPacket::getRevision)
                 .field(SHORT, p -> (short) p.getSlot())
                 .sub(ITEM_STACK, ScreenHandlerSlotUpdateS2CPacket::getStack));
+
+        // Fire event
+        RegisterHighlightInstructionEvent.EVENT.invoker().onRegister();
     }
 
-    private static <T> DataHighlightInstruction<PacketByteBuf, T> nullable(Class<T> clazz, PacketEncoder<PacketByteBuf, T> encoder) {
+    public static <T> DataHighlightInstruction<PacketByteBuf, T> nullable(Class<T> clazz, PacketEncoder<PacketByteBuf, T> encoder) {
         return nullable(clazz, t -> "", encoder);
     }
 
-    private static <T> DataHighlightInstruction<PacketByteBuf, T> nullable(Class<T> clazz, Function<T, String> descriptor, PacketEncoder<PacketByteBuf, T> encoder) {
+    public static <T> DataHighlightInstruction<PacketByteBuf, T> nullable(Class<T> clazz, Function<T, String> descriptor, PacketEncoder<PacketByteBuf, T> encoder) {
         return packet(clazz, b -> b
                 .field(BOOL.withDescription(bool -> bool ? "Not Null" : "Null"), Objects::nonNull, Boolean::booleanValue)
                 .packetEncoder(encoder, descriptor, Function.identity()));
     }
 
-    private static <T> DataHighlightInstruction<ByteBuf, T> bufNullable(Class<T> clazz, PacketEncoder<ByteBuf, T> encoder) {
+    public static <T> DataHighlightInstruction<ByteBuf, T> bufNullable(Class<T> clazz, PacketEncoder<ByteBuf, T> encoder) {
         return bufNullable(clazz, t -> "", encoder);
     }
 
-    private static <T> DataHighlightInstruction<ByteBuf, T> bufNullable(Class<T> clazz, Function<T, String> descriptor, PacketEncoder<ByteBuf, T> encoder) {
+    public static <T> DataHighlightInstruction<ByteBuf, T> bufNullable(Class<T> clazz, Function<T, String> descriptor, PacketEncoder<ByteBuf, T> encoder) {
         return register(clazz, b -> b
                 .field(BOOL.withDescription(bool -> bool ? "Not Null" : "Null"), Objects::nonNull, Boolean::booleanValue)
                 .packetEncoder(encoder, descriptor, Function.identity()));
     }
 
-    private static <T> DataHighlightInstruction<PacketByteBuf, T> packet(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<PacketByteBuf, T>> consumer) {
+    public static <T> DataHighlightInstruction<PacketByteBuf, T> packet(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<PacketByteBuf, T>> consumer) {
         return register(clazz, consumer);
     }
 
-    private static <T> DataHighlightInstruction<RegistryByteBuf, T> registry(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<RegistryByteBuf, T>> consumer) {
+    public static <T> DataHighlightInstruction<RegistryByteBuf, T> registry(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<RegistryByteBuf, T>> consumer) {
         return register(clazz, consumer);
     }
 
-    private static <B extends ByteBuf, T> DataHighlightInstruction<B, T> register(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<B, T>> consumer) {
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> register(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<B, T>> consumer) {
         var builder = PacketDataHighlighterBuilder.<B, T>builder();
         consumer.accept(builder);
         var built = builder.build();
