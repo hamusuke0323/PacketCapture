@@ -10,6 +10,7 @@ import com.hamusuke.packetcap.gui.components.ClassFieldList.HasClassField;
 import com.hamusuke.packetcap.highlight.Highlight;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.tooltip.HoveredTooltipPositioner;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.screen.ScreenTexts;
 import net.minecraft.text.Text;
@@ -117,7 +118,7 @@ public class PacketDetailsScreen extends Screen {
                     additional = additional.substring(0, additional.length() - 1);
                 }
 
-                gui.drawTooltip(this.textRenderer, this.textRenderer.wrapLines(Text.literal(es.getKey() + (additional.isEmpty() ? "" : "\n" + additional)).styled(style -> style.withFont(PacketCapture.MONO_FONT)), Math.max(gui.getScaledWindowWidth() / 2, 200)), (screenWidth, screenHeight, x, y, width1, height1) -> new Vector2i(mouseX + 10, mouseY + 10), mouseX, mouseY);
+                gui.drawTooltip(this.textRenderer, this.textRenderer.wrapLines(Text.literal(es.getKey() + (additional.isEmpty() ? "" : "\n" + additional)).styled(style -> style.withFont(PacketCapture.MONO_FONT)), Math.max(gui.getScaledWindowWidth() / 2, 200)), HoveredTooltipPositioner.INSTANCE, mouseX, mouseY);
                 break;
             }
         }
