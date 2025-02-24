@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "package": "com.hamusuke.packetcap.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "DecoderHandlerMixin",
+    "EncoderHandlerMixin",
+    "EntryListWidget$EntryMixin",
+    "PacketCodecDispatcherMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "refmap": "mixins.packetcapture.refmap.json",
+  "mixins": [
+    "LoginKeyC2SPacketMixin"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "packetcapture",
+	"version": "${version}",
+	"name": "PacketCapture",
+	"description": "This is a mod that adds packet-capturing screen/overlay.\n\nYou can peek Minecraft network.",
+	"authors": [
+		"hamusuke2303"
+	],
+	"license": "Apache-2.0",
+	"environment": "CLIENT",
+	"entrypoints": {
+		"client": [
+			"com.hamusuke.packetcap.PacketCapture"
+		],
+		"modmenu": [ "com.hamusuke.packetcap.ModMenuApiImpl" ]
+	},
+	"mixins": [
+		{
+			"config": "mixins.packetcapture.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.16.10",
+		"minecraft": "~1.21.4",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
