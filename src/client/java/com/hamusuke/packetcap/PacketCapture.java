@@ -71,12 +71,14 @@ public final class PacketCapture implements ClientModInitializer {
     private static final Gson GSON = new Gson();
     private static final Set<PacketFilter> DEFAULT_PACKET_FILTERS = Set.of(
             new PacketFilter("Chunk", FilterType.CONTAINS),
-            new PacketFilter("Motion", FilterType.CONTAINS),
+            new PacketFilter("EntityVelocity", FilterType.CONTAINS),
             new PacketFilter("BlockUpdate", FilterType.CONTAINS),
-            new PacketFilter("MoveEntity", FilterType.CONTAINS),
-            new PacketFilter("EntityData", FilterType.CONTAINS),
-            new PacketFilter("RotateHead", FilterType.CONTAINS),
-            new PacketFilter("RemoveEntities", FilterType.CONTAINS),
+            new PacketFilter("MoveRelative", FilterType.CONTAINS),
+            new PacketFilter("EntityPosition", FilterType.CONTAINS),
+            new PacketFilter("Rotate", FilterType.CONTAINS),
+            new PacketFilter("EntityTrackerUpdate", FilterType.CONTAINS),
+            new PacketFilter("SetHeadYaw", FilterType.CONTAINS),
+            new PacketFilter("EntitiesDestroy", FilterType.CONTAINS),
             new PacketFilter("SectionBlocksUpdate", FilterType.CONTAINS),
             new PacketFilter("Bundle", FilterType.CONTAINS),
             new PacketFilter("PlayerMove", FilterType.CONTAINS),
@@ -87,7 +89,7 @@ public final class PacketCapture implements ClientModInitializer {
             new PacketFilter("Pong", FilterType.CONTAINS),
             new PacketFilter("ClientTickEnd", FilterType.CONTAINS),
             new PacketFilter("Attributes", FilterType.CONTAINS),
-            new PacketFilter("SetTime", FilterType.CONTAINS),
+            new PacketFilter("WorldTimeUpdate", FilterType.CONTAINS),
             new PacketFilter("TeleportEntity", FilterType.CONTAINS),
             new PacketFilter("EntityEvent", FilterType.CONTAINS)
     );
