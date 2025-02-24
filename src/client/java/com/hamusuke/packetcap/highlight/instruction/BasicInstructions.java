@@ -2,7 +2,9 @@ package com.hamusuke.packetcap.highlight.instruction;
 
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.encoding.StringEncoding;
 import net.minecraft.network.encoding.VarInts;
+import net.minecraft.util.Identifier;
 
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
@@ -23,8 +25,9 @@ public class BasicInstructions {
     public static final Descriptor<ByteBuf, ByteBuf> BYTE_BUF = o -> valueOnly(ByteBuf::readableBytes, o);
     public static final Descriptor<ByteBuf, ByteBuffer> BYTE_BUFFER = o -> valueOnly(Buffer::remaining, o);
     public static final Descriptor<ByteBuf, Integer> VAR_INT = o -> valueOnly(VarInts::getSizeInBytes, o);
-    public static final Descriptor<PacketByteBuf, String> STRING = o -> guessing(PacketByteBuf::writeString, o);
-    public static final Descriptor<PacketByteBuf, UUID> UUID = o -> constant(16, o);
+    public static final Descriptor<ByteBuf, String> STRING = o -> guessing((byteBuf, s) -> StringEncoding.encode(byteBuf, s, 32767), o);
+    public static final Descriptor<ByteBuf, UUID> UUID = o -> constant(16, o);
+    public static final Descriptor<PacketByteBuf, Identifier> IDENTIFIER = o -> guessing(PacketByteBuf::writeIdentifier, o);
 
     public interface Descriptor<B extends ByteBuf, T> {
         BufInstruction<B, T> withDescription(Function<T, String> descriptor);

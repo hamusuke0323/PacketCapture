@@ -183,13 +183,16 @@ public final class PacketCapture implements ClientModInitializer {
         List<Highlight<?>> highlights = Lists.newArrayList();
         DataHighlightInstruction inst = DataHighlightInstructions.getFrom(packet.getClass());
         if (inst != null) {
-            DynamicRegistryManager manager = null;
-            if (this.mc.getNetworkHandler() != null) {
-                manager = this.mc.getNetworkHandler().getRegistryManager();
+            DynamicRegistryManager manager;
+            while (this.mc.player == null) {
+                Thread.yield();
             }
+            manager = this.mc.player.getRegistryManager();
             var reg = new RegistryByteBuf(Unpooled.buffer(), manager);
             try {
                 highlights.addAll(inst.createHighlights(packetEndIndex + 1, reg, packet));
+            } catch (Throwable t) {
+                LOGGER.warn("Failed to create highlights for " + packet.getClass(), t);
             } finally {
                 reg.release();
             }
@@ -215,6 +218,10 @@ public final class PacketCapture implements ClientModInitializer {
                     return new PacketDetails(packet, copied, packetId, end, this.createHighlights(packet, end));
                 }, SENT_PACKET_DETAIL_RETRIEVER)
                 .whenComplete((dedicatedServerPacketDetails, throwable) -> {
+                    if (throwable != null) {
+                        LOGGER.warn("Error occurred while creating packet details", throwable);
+                    }
+
                     this.addToSent(dedicatedServerPacketDetails);
                 });
     }
@@ -248,6 +255,10 @@ public final class PacketCapture implements ClientModInitializer {
                 }, RECEIVED_PACKET_DETAIL_RETRIEVER)
                 .whenComplete((details, throwable) -> {
                     ReferenceCountUtil.release(byteBuf);
+
+                    if (throwable != null) {
+                        LOGGER.warn("Error occurred while creating packet details", throwable);
+                    }
 
                     if (details != null) {
                         this.addToReceived(details);

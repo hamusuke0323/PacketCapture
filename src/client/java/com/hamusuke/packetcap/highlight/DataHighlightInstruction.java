@@ -13,11 +13,13 @@ import net.minecraft.network.codec.PacketEncoder;
 import org.apache.commons.compress.utils.Lists;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.VAR_INT;
 import static com.hamusuke.packetcap.highlight.instruction.BufInstruction.guessing;
 
 public class DataHighlightInstruction<B extends ByteBuf, V> {
@@ -89,25 +91,49 @@ public class DataHighlightInstruction<B extends ByteBuf, V> {
 
         public <V> PacketDataHighlighterBuilder<B, T> field(BufInstruction<? super B, V> instruction, Function<T, V> fieldGetter, Predicate<V> shouldContinue) {
             this.instructions.add((BufInstruction) new BufInstruction<B, T>() {
-                @Nullable
-                private V casted;
-
-                private void assignIfNull(T value) {
-                    if (this.casted == null) {
-                        this.casted = fieldGetter.apply(value);
-                    }
-                }
-
                 @Override
                 public List<Highlight<?>> write(int curWriterIndex, B buf, T value) {
-                    this.assignIfNull(value);
-                    return instruction.write(curWriterIndex, buf, this.casted);
+                    return instruction.write(curWriterIndex, buf, fieldGetter.apply(value));
                 }
 
                 @Override
                 public boolean shouldContinue(T value) {
-                    this.assignIfNull(value);
-                    return shouldContinue.test(this.casted);
+                    return shouldContinue.test(fieldGetter.apply(value));
+                }
+            });
+            return this;
+        }
+
+        public <V, C extends Collection<V>> PacketDataHighlighterBuilder<B, T> list(Descriptor<? super B, V> elementInstruction, Function<T, C> collectionGetter) {
+            return this.list(PacketDataHighlighterBuilder.<B, V>builder()
+                    .field(elementInstruction.withDescription(Objects::toString), o -> o).build(), collectionGetter);
+        }
+
+        public <V, C extends Collection<V>> PacketDataHighlighterBuilder<B, T> list(DataHighlightInstruction<B, V> elementInstruction, Function<T, C> collectionGetter) {
+            this.instructions.add((BufInstruction) new SubBufInstruction<B, T, C>() {
+                @Override
+                public List<Highlight<?>> write(int curWriterIndex, B buf, T value) {
+                    var collection = collectionGetter.apply(value);
+                    List<Highlight<?>> highlights = Lists.newArrayList();
+                    highlights.addAll(VAR_INT.withDescription(size -> "Collection Size: " + size).write(curWriterIndex, buf, collection.size()));
+                    curWriterIndex += highlights.stream()
+                            .map(Highlight::range)
+                            .mapToInt(r -> r.endInclusive() - r.startInclusive() + 1).sum();
+
+                    for (var v : collection) {
+                        var hs = elementInstruction.createHighlights(curWriterIndex, buf, v);
+                        highlights.addAll(hs);
+                        curWriterIndex += hs.stream()
+                                .map(Highlight::range)
+                                .mapToInt(r -> r.endInclusive() - r.startInclusive() + 1).sum();
+                    }
+
+                    return highlights;
+                }
+
+                @Override
+                public C getField(T value) {
+                    return collectionGetter.apply(value);
                 }
             });
             return this;

@@ -13,6 +13,7 @@
   },
   "refmap": "mixins.packetcapture.refmap.json",
   "mixins": [
+    "LoginHelloS2CPacketMixin",
     "LoginKeyC2SPacketMixin"
   ]
 }

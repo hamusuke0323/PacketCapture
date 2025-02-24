@@ -163,8 +163,9 @@ public class PacketDetailsScreen extends Screen {
         }
 
         this.fillHexRect(gui, startIndex, (startRow << 4) + 15);
-        for (int i = startRow + 1; i < rows; i++) {
-            this.fillHexRect(gui, i << 4, (i << 4) + 15);
+        for (int i = 1; i < rows; i++) {
+            int row = startRow + i;
+            this.fillHexRect(gui, row << 4, (row << 4) + 15);
         }
         this.fillHexRect(gui, endRow << 4, endIndex);
     }
