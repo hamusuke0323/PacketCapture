@@ -20,7 +20,6 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Vector2i;
 
 import java.util.Map;
-import java.util.stream.IntStream;
 
 public class PacketDetailsScreen extends Screen {
     private static final Text ADD_TO_FILTER = Text.translatable(PacketCapture.MOD_ID + ".add_to_filter");
@@ -86,6 +85,26 @@ public class PacketDetailsScreen extends Screen {
         this.renderHexDump(p_281549_, p_281550_, p_282878_, p_282465_);
     }
 
+    private static String getToolTipTextRecursively(Highlight<?> highlight, int curBytePos, int depth) {
+        var builder = new StringBuilder();
+        boolean descriptionInserted = false;
+        if (highlight.range().contains(curBytePos) && !highlight.description().isEmpty()) {
+            builder.repeat(" ", depth + 1).append(highlight.description()).append('\n');
+            descriptionInserted = true;
+        }
+
+        for (var sub : highlight.sub()) {
+            var str = getToolTipTextRecursively(sub, curBytePos, depth + (descriptionInserted ? 1 : 0));
+            if (str.isEmpty()) {
+                continue;
+            }
+
+            builder.append(str);
+        }
+
+        return builder.toString();
+    }
+
     private void renderHexDump(DrawContext gui, int mouseX, int mouseY, float v) {
         this.hexDump.render(gui, mouseX, mouseY, v);
         gui.drawCenteredTextWithShadow(this.textRenderer, DATA, this.width / 2, this.hexDump.getY() - 14, 16777215);
@@ -100,7 +119,9 @@ public class PacketDetailsScreen extends Screen {
                     return;
                 }
 
-                this.highlightHexAndChars(gui, h.range().startInclusive(), h.range().endInclusive());
+                gui.enableScissor(this.hexDump.getX(), this.hexDump.getY(), this.hexDump.getScrollbarX(), this.hexDump.getBottom());
+                this.highlightHexAndChars(gui, h.range().startInclusive(), h.range().endInclusive(), ColorHelper.getArgb(64, 255, 255, 0));
+                gui.disableScissor();
             });
         }
 
@@ -111,9 +132,11 @@ public class PacketDetailsScreen extends Screen {
 
         for (var es : this.mapForHighlighting.entrySet()) {
             var h = es.getValue();
-            if (IntStream.rangeClosed(h.range().startInclusive(), h.range().endInclusive()).boxed().toList().contains(i)) {
-                this.highlightHexAndChars(gui, h.range().startInclusive(), h.range().endInclusive());
-                var additional = getToolTipTextRecursively(h, i);
+            if (h.range().contains(i)) {
+                gui.enableScissor(this.hexDump.getX(), this.hexDump.getY(), this.hexDump.getScrollbarX(), this.hexDump.getBottom());
+                this.highlightHexAndCharsRecursively(gui, h, i, 0);
+                gui.disableScissor();
+                var additional = getToolTipTextRecursively(h, i, 0);
                 if (additional.endsWith("\n")) {
                     additional = additional.substring(0, additional.length() - 1);
                 }
@@ -124,74 +147,73 @@ public class PacketDetailsScreen extends Screen {
         }
     }
 
-    private static String getToolTipTextRecursively(Highlight<?> highlight, int curBytePos) {
-        var builder = new StringBuilder();
-        if (highlight.range().contains(curBytePos) && !highlight.description().isEmpty()) {
-            builder.append("  ").append(highlight.description()).append('\n');
+    private void highlightHexAndCharsRecursively(DrawContext gui, Highlight<?> highlight, int curBytePos, int depth) {
+        var range = highlight.range();
+        if (range.contains(curBytePos)) {
+            float hue = (((depth + 1) * 60) % 360) / 360.0F;
+            this.highlightHexAndChars(gui, range.startInclusive(), range.endInclusive(), MathHelper.hsvToArgb(hue, 1.0F, 1.0F, 64));
         }
 
         for (var sub : highlight.sub()) {
-            var str = getToolTipTextRecursively(sub, curBytePos);
-            if (str.isEmpty()) {
-                continue;
-            }
-
-            builder.append(str);
+            this.highlightHexAndCharsRecursively(gui, sub, curBytePos, depth + 1);
         }
-
-        return builder.toString();
     }
 
-    private void highlightHexAndChars(DrawContext gui, int startIndex, int endIndex) {
-        this.fillHexRect(gui, startIndex, endIndex);
-        this.fillCharRect(gui, startIndex, endIndex);
+    private void highlightHexAndChars(DrawContext gui, int startIndex, int endIndex, int color) {
+        this.fillHexRect(gui, startIndex, endIndex, color);
+        this.fillCharRect(gui, startIndex, endIndex, color);
     }
 
-    private void fillHexRect(DrawContext gui, int startIndex, int endIndex) {
+    private void fillHexRect(DrawContext gui, int startIndex, int endIndex, int color) {
         int startRow = startIndex >>> 4;
         int endRow = endIndex >>> 4;
         int rows = endRow - startRow;
 
         if (rows == 0) {
             var start = this.getByteTopLeftFrom(startIndex);
-            if (start.y < this.hexDump.getY() || start.y + 10 > this.hexDump.getBottom()) {
+            if (this.isOverflow(start)) {
                 return;
             }
 
             var end = this.getByteTopLeftFrom(endIndex).add(MathHelper.floor(this.oneByteWidth - this.oneCharWidth), 0);
-            gui.fill(start.x, start.y, end.x, end.y + 10, ColorHelper.getArgb(64, 255, 255, 0));
+            gui.fill(start.x, start.y, end.x, end.y + 10, color);
             return;
         }
 
-        this.fillHexRect(gui, startIndex, (startRow << 4) + 15);
+        this.fillHexRect(gui, startIndex, (startRow << 4) + 15, color);
         for (int i = 1; i < rows; i++) {
             int row = startRow + i;
-            this.fillHexRect(gui, row << 4, (row << 4) + 15);
+            this.fillHexRect(gui, row << 4, (row << 4) + 15, color);
         }
-        this.fillHexRect(gui, endRow << 4, endIndex);
+        this.fillHexRect(gui, endRow << 4, endIndex, color);
     }
 
-    private void fillCharRect(DrawContext gui, int startIndex, int endIndex) {
+    private void fillCharRect(DrawContext gui, int startIndex, int endIndex, int color) {
         int startRow = startIndex >>> 4;
         int endRow = endIndex >>> 4;
         int rows = endRow - startRow;
 
         if (rows == 0) {
             var start = this.getCharTopLeftFrom(startIndex);
-            if (start.y < this.hexDump.getY() || start.y + 10 > this.hexDump.getBottom()) {
+            if (this.isOverflow(start)) {
                 return;
             }
 
             var end = this.getCharTopLeftFrom(endIndex).add(MathHelper.floor(this.oneCharWidth), 0);
-            gui.fill(start.x, start.y, end.x, end.y + 10, ColorHelper.getArgb(64, 255, 255, 0));
+            gui.fill(start.x, start.y, end.x, end.y + 10, color);
             return;
         }
 
-        this.fillCharRect(gui, startIndex, (startRow << 4) + 15);
-        for (int i = startRow + 1; i < rows; i++) {
-            this.fillCharRect(gui, i << 4, (i << 4) + 15);
+        this.fillCharRect(gui, startIndex, (startRow << 4) + 15, color);
+        for (int i = 1; i < rows; i++) {
+            int row = startRow + i;
+            this.fillCharRect(gui, row << 4, (row << 4) + 15, color);
         }
-        this.fillCharRect(gui, endRow << 4, endIndex);
+        this.fillCharRect(gui, endRow << 4, endIndex, color);
+    }
+
+    private boolean isOverflow(Vector2i start) {
+        return start.y + 10 < this.hexDump.getY() || start.y > this.hexDump.getBottom();
     }
 
     private Vector2i getByteTopLeftFrom(int index) {

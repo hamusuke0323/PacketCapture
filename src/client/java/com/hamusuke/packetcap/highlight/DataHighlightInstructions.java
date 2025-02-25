@@ -10,6 +10,8 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import net.minecraft.component.ComponentChanges;
 import net.minecraft.component.MergedComponentMap;
 import net.minecraft.item.ItemStack;
@@ -17,15 +19,16 @@ import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.codec.PacketEncoder;
-import net.minecraft.network.encoding.StringEncoding;
+import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.packet.c2s.common.CustomPayloadC2SPacket;
 import net.minecraft.network.packet.c2s.handshake.HandshakeC2SPacket;
 import net.minecraft.network.packet.c2s.login.LoginHelloC2SPacket;
 import net.minecraft.network.packet.c2s.login.LoginKeyC2SPacket;
 import net.minecraft.network.packet.c2s.login.LoginQueryResponseC2SPacket;
-import net.minecraft.network.packet.c2s.login.LoginQueryResponsePayload;
 import net.minecraft.network.packet.c2s.play.CreativeInventoryActionC2SPacket;
 import net.minecraft.network.packet.c2s.play.UpdatePlayerAbilitiesC2SPacket;
 import net.minecraft.network.packet.c2s.query.QueryPingC2SPacket;
+import net.minecraft.network.packet.s2c.common.CustomPayloadS2CPacket;
 import net.minecraft.network.packet.s2c.login.*;
 import net.minecraft.network.packet.s2c.play.*;
 import net.minecraft.network.packet.s2c.query.PingResultS2CPacket;
@@ -36,6 +39,7 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.ServerMetadata;
 import net.minecraft.text.Text.Serialization;
 import net.minecraft.text.TextCodecs;
+import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -45,31 +49,51 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.*;
+import static com.hamusuke.packetcap.highlight.instruction.BufInstruction.guessing;
 
 public class DataHighlightInstructions {
     private static final Map<Class<?>, DataHighlightInstruction<? extends ByteBuf, ?>> HIGHLIGHTERS = Maps.newHashMap();
 
-    public static final DataHighlightInstruction<ByteBuf, Property> PROPERTY = register(Property.class, builder -> builder
-            .field(STRING.withDescription(s -> "Property Name: " + s), Property::name)
-            .field(STRING.withDescription(s -> "Property Value: " + s), Property::value)
-            .sub(bufNullable(String.class, s -> "Signature", (buf, value) -> StringEncoding.encode(buf, value, 1024)), Property::signature));
+    public static final DataHighlightInstruction<ByteBuf, String> STRING = noPacket(builder -> builder
+            .field(VAR_INT.withDescription(len -> "String Length: " + len), s -> {
+                var byteBuf = Unpooled.buffer();
 
-    public static final DataHighlightInstruction<ByteBuf, PropertyMap> PROPERTY_MAP = register(PropertyMap.class, builder -> builder
+                try {
+                    return ByteBufUtil.writeUtf8(byteBuf, s);
+                } finally {
+                    byteBuf.release();
+                }
+            })
+            .field(BYTE_BUF.withDescription(byteBuf -> "String Data"), s -> {
+                var byteBuf = Unpooled.buffer();
+
+                try {
+                    ByteBufUtil.writeUtf8(byteBuf, s);
+                    return byteBuf;
+                } finally {
+                    byteBuf.release();
+                }
+            }));
+
+    public static final DataHighlightInstruction<ByteBuf, Identifier> IDENTIFIER = noPacket(builder -> builder
+            .sub(STRING, identifier -> "ID (String)", Identifier::toString));
+    public static final DataHighlightInstruction<RegistryByteBuf, RegistryKey<?>> REGISTRY_KEY = noPacket(builder -> builder
+            .sub(IDENTIFIER, Identifier::toString, RegistryKey::getValue));
+    public static final DataHighlightInstruction<ByteBuf, Property> PROPERTY = noPacket(builder -> builder
+            .sub(STRING, s -> "Property Name: " + s, Property::name)
+            .sub(STRING, s -> "Property Value: " + s, Property::value)
+            .sub(nullable(s -> "Signature", STRING), Property::signature));
+    public static final DataHighlightInstruction<ByteBuf, PropertyMap> PROPERTY_MAP = noPacket(builder -> builder
             .list(PROPERTY, ForwardingMultimap::values));
-
-    public static final DataHighlightInstruction<ByteBuf, GameProfile> GAME_PROFILE = register(GameProfile.class, builder -> builder
+    public static final DataHighlightInstruction<ByteBuf, GameProfile> GAME_PROFILE = noPacket(builder -> builder
             .field(UUID.withDescription(uuid -> "UUID: " + uuid), GameProfile::getId)
-            .field(STRING.withDescription(s -> "Name: " + s), GameProfile::getName)
+            .sub(STRING, s -> "Name: " + s, GameProfile::getName)
             .sub(PROPERTY_MAP, GameProfile::getProperties));
-
-    public static final DataHighlightInstruction<RegistryByteBuf, RegistryKey> REGISTRY_KEY = registry(RegistryKey.class, builder -> builder
-            .packetEncoder(PacketByteBuf::writeRegistryKey, RegistryKey::toString, Function.identity()));
-
-    public static final DataHighlightInstruction<PacketByteBuf, byte[]> BYTE_ARRAY_WITH_LEN = packet(byte[].class, builder -> builder
+    public static final DataHighlightInstruction<PacketByteBuf, byte[]> BYTE_ARRAY_WITH_LEN = noPacket(builder -> builder
             .field(VAR_INT.withDescription(length -> "Byte Array Length: " + length), bytes -> bytes.length)
             .field(BYTE_ARRAY.withDescription(bytes -> "Data"), Function.identity()));
 
-    public static final DataHighlightInstruction<RegistryByteBuf, ItemStack> ITEM_STACK = registry(ItemStack.class, builder -> builder
+    public static final DataHighlightInstruction<RegistryByteBuf, ItemStack> ITEM_STACK = noPacket(builder -> builder
             .field(VAR_INT.withDescription(count -> count <= 0 ? "Empty" : "Count: " + count), ItemStack::getCount, count -> count > 0)
             .packetCodec(PacketCodecs.registryEntry(RegistryKeys.ITEM), e -> "ID: " + e.getIdAsString(), ItemStack::getRegistryEntry)
             .packetCodec(ComponentChanges.PACKET_CODEC, componentChanges -> "ComponentChanges", stack -> stack.getComponents() instanceof MergedComponentMap m ? m.getChanges() : ComponentChanges.EMPTY));
@@ -86,33 +110,33 @@ public class DataHighlightInstructions {
         // HANDSHAKE
         packet(HandshakeC2SPacket.class, builder -> builder
                 .field(VAR_INT, HandshakeC2SPacket::protocolVersion)
-                .field(STRING, HandshakeC2SPacket::address)
+                .sub(STRING, HandshakeC2SPacket::address)
                 .field(SHORT, p -> (short) p.port())
                 .field(VAR_INT, p -> p.intendedState().getId()));
 
         // LOGIN
         packet(LoginHelloC2SPacket.class, builder -> builder
-                .field(STRING.withDescription(s -> "Player Name: " + s), LoginHelloC2SPacket::name)
+                .sub(STRING, s -> "Player Name: " + s, LoginHelloC2SPacket::name)
                 .field(UUID.withDescription(uuid -> "Player UUID: " + uuid), LoginHelloC2SPacket::profileId));
         packet(LoginKeyC2SPacket.class, builder -> builder
                 .sub(BYTE_ARRAY_WITH_LEN, LoginKeyC2SPacketAccessor::getEncryptedSecretKey)
                 .sub(BYTE_ARRAY_WITH_LEN, LoginKeyC2SPacketAccessor::getNonce));
         packet(LoginQueryResponseC2SPacket.class, builder -> builder
                 .field(VAR_INT, LoginQueryResponseC2SPacket::queryId)
-                .sub(nullable(LoginQueryResponsePayload.class, (buf, value) -> value.write(buf)), LoginQueryResponseC2SPacket::response));
+                .sub(nullable(p -> "Payload Data", (buf, value) -> value.write(buf)), LoginQueryResponseC2SPacket::response));
         packet(LoginCompressionS2CPacket.class, builder -> builder
                 .field(VAR_INT, LoginCompressionS2CPacket::getCompressionThreshold));
         packet(LoginDisconnectS2CPacket.class, builder -> builder
-                .field(STRING, p -> Serialization.toJsonString(p.getReason(), DynamicRegistryManager.EMPTY)));
+                .sub(STRING, p -> Serialization.toJsonString(p.getReason(), DynamicRegistryManager.EMPTY)));
         packet(LoginHelloS2CPacket.class, builder -> builder
-                .field(STRING, LoginHelloS2CPacket::getServerId)
+                .sub(STRING, LoginHelloS2CPacket::getServerId)
                 .sub(BYTE_ARRAY_WITH_LEN, LoginHelloS2CPacketAccessor::getPublicKeyBytes)
                 .sub(BYTE_ARRAY_WITH_LEN, LoginHelloS2CPacket::getNonce)
                 .field(BOOL, LoginHelloS2CPacket::needsAuthentication));
         packet(LoginQueryRequestS2CPacket.class, builder -> builder
                 .field(VAR_INT, LoginQueryRequestS2CPacket::queryId)
-                .field(IDENTIFIER, p -> p.payload().id())
-                .packetEncoder((buf, value) -> value.write(buf), LoginQueryRequestS2CPacket::payload));
+                .sub(IDENTIFIER, p -> p.payload().id())
+                .packetEncoderV(LoginQueryRequestPayload::write, LoginQueryRequestS2CPacket::payload));
         packet(LoginSuccessS2CPacket.class, builder -> builder
                 .sub(GAME_PROFILE, LoginSuccessS2CPacket::profile));
 
@@ -120,6 +144,34 @@ public class DataHighlightInstructions {
         registry(CreativeInventoryActionC2SPacket.class, builder -> builder
                 .constant(SHORT)
                 .sub(ITEM_STACK, CreativeInventoryActionC2SPacket::stack));
+
+        packet(CustomPayloadC2SPacket.class, builder -> builder
+                .sub(PacketDataHighlighterBuilder.<PacketByteBuf, CustomPayload>builder()
+                        .sub(IDENTIFIER, id -> "Payload ID: " + id.toString(), payload -> payload.getId().id())
+                        .field(guessing((b, payload) ->
+                                                b.writeIdentifier(payload.getId().id()),
+                                        (b, payload) ->
+                                                CustomPayloadC2SPacket.CODEC.encode(b, new CustomPayloadC2SPacket(payload)),
+                                        packet -> "Payload Data"),
+                                Function.identity()).build(), CustomPayloadC2SPacket::payload));
+
+        registry(CustomPayloadS2CPacket.class, builder -> builder
+                .sub(PacketDataHighlighterBuilder.<RegistryByteBuf, CustomPayload>builder()
+                        .sub(IDENTIFIER, id -> "Payload ID: " + id.toString(), payload -> payload.getId().id())
+                        .field(guessing((b, payload) ->
+                                                b.writeIdentifier(payload.getId().id()),
+                                        (b, payload) -> {
+                                            // Either
+                                            int start = b.writerIndex();
+                                            CustomPayloadS2CPacket.PLAY_CODEC.encode(b, new CustomPayloadS2CPacket(payload));
+                                            if (start != b.writerIndex()) { // If succeeded writing, abort.
+                                                return;
+                                            }
+
+                                            CustomPayloadS2CPacket.CONFIGURATION_CODEC.encode(b, new CustomPayloadS2CPacket(payload));
+                                        },
+                                        packet -> "Payload Data"),
+                                Function.identity()).build(), CustomPayloadS2CPacket::payload));
 
         registry(GameJoinS2CPacket.class, builder -> builder
                 .constant(INT)
@@ -131,7 +183,7 @@ public class DataHighlightInstructions {
                 .constant(BOOL)
                 .constant(BOOL)
                 .constant(BOOL)
-                .packetEncoder((buf, value) -> value.write(buf), GameJoinS2CPacket::commonPlayerSpawnInfo)
+                .packetEncoderV(CommonPlayerSpawnInfo::write, GameJoinS2CPacket::commonPlayerSpawnInfo)
                 .constant(BOOL));
 
         registry(WorldTimeUpdateS2CPacket.class, builder -> builder
@@ -162,40 +214,41 @@ public class DataHighlightInstructions {
         RegisterHighlightInstructionEvent.EVENT.invoker().onRegister();
     }
 
-    public static <T> DataHighlightInstruction<PacketByteBuf, T> nullable(Class<T> clazz, PacketEncoder<PacketByteBuf, T> encoder) {
-        return nullable(clazz, t -> "", encoder);
+    public static <T> void packet(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<PacketByteBuf, T>> consumer) {
+        register(clazz, consumer);
     }
 
-    public static <T> DataHighlightInstruction<PacketByteBuf, T> nullable(Class<T> clazz, Function<T, String> descriptor, PacketEncoder<PacketByteBuf, T> encoder) {
-        return packet(clazz, b -> b
-                .field(BOOL.withDescription(bool -> bool ? "Not Null" : "Null"), Objects::nonNull, Boolean::booleanValue)
-                .packetEncoder(encoder, descriptor, Function.identity()));
+    public static <T> void registry(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<RegistryByteBuf, T>> consumer) {
+        register(clazz, consumer);
     }
 
-    public static <T> DataHighlightInstruction<ByteBuf, T> bufNullable(Class<T> clazz, PacketEncoder<ByteBuf, T> encoder) {
-        return bufNullable(clazz, t -> "", encoder);
-    }
-
-    public static <T> DataHighlightInstruction<ByteBuf, T> bufNullable(Class<T> clazz, Function<T, String> descriptor, PacketEncoder<ByteBuf, T> encoder) {
-        return register(clazz, b -> b
-                .field(BOOL.withDescription(bool -> bool ? "Not Null" : "Null"), Objects::nonNull, Boolean::booleanValue)
-                .packetEncoder(encoder, descriptor, Function.identity()));
-    }
-
-    public static <T> DataHighlightInstruction<PacketByteBuf, T> packet(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<PacketByteBuf, T>> consumer) {
-        return register(clazz, consumer);
-    }
-
-    public static <T> DataHighlightInstruction<RegistryByteBuf, T> registry(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<RegistryByteBuf, T>> consumer) {
-        return register(clazz, consumer);
-    }
-
-    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> register(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<B, T>> consumer) {
+    public static <B extends ByteBuf, T> void register(Class<T> clazz, Consumer<PacketDataHighlighterBuilder<B, T>> consumer) {
         var builder = PacketDataHighlighterBuilder.<B, T>builder();
         consumer.accept(builder);
         var built = builder.build();
         HIGHLIGHTERS.put(clazz, built);
-        return built;
+    }
+
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> nullable(PacketEncoder<B, T> encoder) {
+        return nullable(t -> "", encoder);
+    }
+
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> nullable(Function<T, String> descriptor, PacketEncoder<B, T> encoder) {
+        return noPacket(b -> b
+                .field(BOOL.withDescription(bool -> bool ? "Not Null" : "Null"), Objects::nonNull, Boolean::booleanValue)
+                .packetEncoder(encoder, descriptor, Function.identity()));
+    }
+
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> nullable(Function<T, String> descriptor, DataHighlightInstruction<B, T> sub) {
+        return noPacket(b -> b
+                .field(BOOL.withDescription(bool -> bool ? "Not Null" : "Null"), Objects::nonNull, Boolean::booleanValue)
+                .sub(sub, descriptor, Function.identity()));
+    }
+
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> noPacket(Consumer<PacketDataHighlighterBuilder<B, T>> consumer) {
+        var builder = PacketDataHighlighterBuilder.<B, T>builder();
+        consumer.accept(builder);
+        return builder.build();
     }
 
     @Nullable

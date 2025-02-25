@@ -74,15 +74,17 @@ public class PacketDetails {
         // common: fields
         this.getVisitor().visit();
         var highlighter = DataHighlightInstructions.getFrom(this.getVisitor().getClazz());
-        if (highlighter != null) {
-            var fields = this.getVisitor().getFields().stream()
-                    .filter(f -> f instanceof SimpleClassField && !f.isStatic())
-                    .toList();
+        var fields = this.getVisitor().getFields().stream()
+                .filter(f -> f instanceof SimpleClassField && !f.isStatic())
+                .toList();
 
-            if (fields.size() >= this.highlights.size()) {
-                for (int i = 0; i < this.highlights.size(); i++) {
-                    this.mapForHighlighting.put(fields.get(i).getName(), this.highlights.get(i));
-                }
+        if (highlighter == null && fields.size() == 1) {
+            this.mapForHighlighting.put(fields.getFirst().getName(), new Highlight<>(new HighlightRange(this.getPacketIdEndIndex() + 1, this.getSize() - 1), null, "", List.of()));
+        }
+
+        if (fields.size() >= this.highlights.size()) {
+            for (int i = 0; i < this.highlights.size(); i++) {
+                this.mapForHighlighting.put(fields.get(i).getName(), this.highlights.get(i));
             }
         }
 

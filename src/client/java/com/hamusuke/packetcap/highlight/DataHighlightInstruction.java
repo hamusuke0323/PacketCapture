@@ -10,8 +10,8 @@ import io.netty.buffer.ByteBuf;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketEncoder;
+import net.minecraft.network.codec.ValueFirstEncoder;
 import org.apache.commons.compress.utils.Lists;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.List;
@@ -40,7 +40,7 @@ public class DataHighlightInstruction<B extends ByteBuf, V> {
                 curWriterIndex += hs.stream()
                         .map(Highlight::range)
                         .mapToInt(r -> r.endInclusive() - r.startInclusive() + 1).sum();
-                var h = new Highlight<>(new HighlightRange(start, curWriterIndex - 1), instance, "", ImmutableList.copyOf(hs));
+                var h = new Highlight<>(new HighlightRange(start, curWriterIndex - 1), instance, sub.getDescription(instance), ImmutableList.copyOf(hs));
                 highlights.add(h);
             } else {
                 var hs = i.write(curWriterIndex, buf, value);
@@ -105,11 +105,28 @@ public class DataHighlightInstruction<B extends ByteBuf, V> {
         }
 
         public <V, C extends Collection<V>> PacketDataHighlighterBuilder<B, T> list(Descriptor<? super B, V> elementInstruction, Function<T, C> collectionGetter) {
+            return this.list(elementInstruction, c -> "", collectionGetter);
+        }
+
+        public <V, C extends Collection<V>> PacketDataHighlighterBuilder<B, T> list(Descriptor<? super B, V> elementInstruction, Function<C, String> collectionDescriptor, Function<T, C> collectionGetter) {
             return this.list(PacketDataHighlighterBuilder.<B, V>builder()
-                    .field(elementInstruction.withDescription(Objects::toString), o -> o).build(), collectionGetter);
+                    .field(elementInstruction.withDescription(Objects::toString), Function.identity()).build(), collectionDescriptor, collectionGetter);
+        }
+
+        public <V, C extends Collection<V>> PacketDataHighlighterBuilder<B, T> list(BufInstruction<? super B, V> elementInstruction, Function<T, C> collectionGetter) {
+            return this.list(elementInstruction, c -> "", collectionGetter);
+        }
+
+        public <V, C extends Collection<V>> PacketDataHighlighterBuilder<B, T> list(BufInstruction<? super B, V> elementInstruction, Function<C, String> collectionDescriptor, Function<T, C> collectionGetter) {
+            return this.list(PacketDataHighlighterBuilder.<B, V>builder()
+                    .field(elementInstruction, Function.identity()).build(), collectionDescriptor, collectionGetter);
         }
 
         public <V, C extends Collection<V>> PacketDataHighlighterBuilder<B, T> list(DataHighlightInstruction<B, V> elementInstruction, Function<T, C> collectionGetter) {
+            return this.list(elementInstruction, c -> "", collectionGetter);
+        }
+
+        public <V, C extends Collection<V>> PacketDataHighlighterBuilder<B, T> list(DataHighlightInstruction<B, V> elementInstruction, Function<C, String> collectionDescriptor, Function<T, C> collectionGetter) {
             this.instructions.add((BufInstruction) new SubBufInstruction<B, T, C>() {
                 @Override
                 public List<Highlight<?>> write(int curWriterIndex, B buf, T value) {
@@ -135,6 +152,11 @@ public class DataHighlightInstruction<B extends ByteBuf, V> {
                 public C getField(T value) {
                     return collectionGetter.apply(value);
                 }
+
+                @Override
+                public String getDescription(C field) {
+                    return collectionDescriptor.apply(field);
+                }
             });
             return this;
         }
@@ -153,6 +175,15 @@ public class DataHighlightInstruction<B extends ByteBuf, V> {
             return this;
         }
 
+        public <V> PacketDataHighlighterBuilder<B, T> packetEncoderV(ValueFirstEncoder<B, V> codec, Function<T, V> fieldGetter) {
+            return this.packetEncoderV(codec, v -> "", fieldGetter);
+        }
+
+        public <V> PacketDataHighlighterBuilder<B, T> packetEncoderV(ValueFirstEncoder<B, V> codec, Function<V, String> descriptor, Function<T, V> fieldGetter) {
+            this.instructions.add(guessing((byteBuf, o) -> codec.encode(fieldGetter.apply((T) o), (B) byteBuf), o -> descriptor.apply(fieldGetter.apply((T) o))));
+            return this;
+        }
+
         public <V> PacketDataHighlighterBuilder<B, T> packetEncoder(PacketEncoder<B, V> codec, Function<T, V> fieldGetter) {
             return this.packetEncoder(codec, v -> "", fieldGetter);
         }
@@ -163,6 +194,10 @@ public class DataHighlightInstruction<B extends ByteBuf, V> {
         }
 
         public <T2> PacketDataHighlighterBuilder<B, T> sub(DataHighlightInstruction<? super B, T2> subInstruction, Function<T, T2> fieldGetter) {
+            return this.sub(subInstruction, t2 -> "", fieldGetter);
+        }
+
+        public <T2> PacketDataHighlighterBuilder<B, T> sub(DataHighlightInstruction<? super B, T2> subInstruction, Function<T2, String> descriptor, Function<T, T2> fieldGetter) {
             this.instructions.add((BufInstruction) new SubBufInstruction<B, T, T2>() {
                 @Override
                 public List<Highlight<?>> write(int curWriterIndex, B buf, T value) {
@@ -172,6 +207,11 @@ public class DataHighlightInstruction<B extends ByteBuf, V> {
                 @Override
                 public T2 getField(T value) {
                     return fieldGetter.apply(value);
+                }
+
+                @Override
+                public String getDescription(T2 field) {
+                    return descriptor.apply(field);
                 }
             });
 
