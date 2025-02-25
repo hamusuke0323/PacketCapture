@@ -1,5 +1,6 @@
 package com.hamusuke.packetcap;
 
+import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
@@ -194,6 +195,8 @@ public final class PacketCapture implements ClientModInitializer {
     }
 
     private static void shutdownExecutor(ExecutorService e) {
+        var stopwatch = Stopwatch.createStarted();
+        LOGGER.info("Shutting down the executor...");
         e.shutdown();
 
         boolean f;
@@ -206,6 +209,9 @@ public final class PacketCapture implements ClientModInitializer {
         if (!f) {
             e.shutdownNow();
         }
+
+        LOGGER.info("Shutdown completed in {} ms", stopwatch.elapsed(TimeUnit.MILLISECONDS));
+        stopwatch.stop();
     }
 
     private List<Highlight<?>> createHighlights(Packet<?> packet, int packetEndIndex) {
