@@ -5,13 +5,16 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.hamusuke.packetcap.clazz.field.SimpleClassField;
 import com.hamusuke.packetcap.clazz.visitor.ClassVisitor;
+import com.hamusuke.packetcap.highlight.DataHighlightInstruction;
 import com.hamusuke.packetcap.highlight.DataHighlightInstructions;
 import com.hamusuke.packetcap.highlight.Highlight;
 import com.hamusuke.packetcap.highlight.Highlight.HighlightRange;
 import com.hamusuke.packetcap.utils.ByteConversion;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import net.minecraft.network.packet.Packet;
+import org.apache.commons.compress.utils.Lists;
 
 import java.util.List;
 import java.util.Map;
@@ -79,7 +82,21 @@ public class PacketDetails {
                 .toList();
 
         if (highlighter == null && fields.size() == 1) {
-            this.mapForHighlighting.put(fields.getFirst().getName(), new Highlight<>(new HighlightRange(this.getPacketIdEndIndex() + 1, this.getSize() - 1), null, "", List.of()));
+            List<Highlight<?>> subHighlights = Lists.newArrayList();
+            var visitor = fields.getFirst().getVisitor();
+            if (visitor != null && visitor.getInstance() != null) {
+                DataHighlightInstruction fieldHighlighter = DataHighlightInstructions.getFrom(visitor.getClazz());
+                if (fieldHighlighter != null) {
+                    var buf = Unpooled.buffer();
+                    try {
+                        subHighlights.addAll(fieldHighlighter.createHighlights(this.getPacketIdEndIndex() + 1, buf, visitor.getInstance()));
+                    } finally {
+                        buf.release();
+                    }
+                }
+            }
+
+            this.mapForHighlighting.put(fields.getFirst().getName(), new Highlight<>(new HighlightRange(this.getPacketIdEndIndex() + 1, this.getSize() - 1), visitor == null ? null : visitor.getInstance(), "", subHighlights));
         }
 
         if (fields.size() >= this.highlights.size()) {

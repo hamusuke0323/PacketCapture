@@ -1,25 +1,21 @@
-package com.hamusuke.packetcap.event;
+package com.hamusuke.packetcap;
 
 import com.hamusuke.packetcap.clazz.visitor.ClassVisitors.VisitorFactory;
 import com.hamusuke.packetcap.clazz.visitor.ClassVisitors.VisitorRegistry;
-import net.fabricmc.fabric.api.event.Event;
-import net.fabricmc.fabric.api.event.EventFactory;
 import org.apache.commons.compress.utils.Lists;
 
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-public interface RegisterClassVisitorsEvent {
-    Event<RegisterClassVisitorsEvent> EVENT = EventFactory.createArrayBacked(RegisterClassVisitorsEvent.class, listeners -> ctx -> {
-        for (var l : listeners) {
-            l.call(ctx);
-        }
-    });
+public interface PacketCaptureApi {
+    default void onRegisterClassVisitors(CustomVisitorRegistry registry) {
+    }
 
-    void call(Context ctx);
+    default void onRegisterHighlightInstructions() {
+    }
 
-    class Context {
+    class CustomVisitorRegistry {
         private final List<VisitorRegistry<?>> customVisitors = Lists.newArrayList();
 
         public void register(Predicate<Object> finder, VisitorFactory<Object> factory) {

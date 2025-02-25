@@ -1,8 +1,8 @@
 package com.hamusuke.packetcap.clazz.visitor;
 
 import com.google.common.primitives.Primitives;
-import com.hamusuke.packetcap.event.RegisterClassVisitorsEvent;
-import com.hamusuke.packetcap.event.RegisterClassVisitorsEvent.Context;
+import com.hamusuke.packetcap.PacketCapture;
+import com.hamusuke.packetcap.PacketCaptureApi.CustomVisitorRegistry;
 import com.hamusuke.packetcap.utils.ObjectUtil;
 import com.mojang.datafixers.util.Pair;
 import org.apache.commons.compress.utils.Lists;
@@ -24,9 +24,9 @@ public class ClassVisitors {
         registerClassVisitor(o -> o instanceof String || Primitives.isWrapperType(o.getClass()), o -> new StringConvertibleClassVisitor(o.getClass(), o));
         registerClassVisitor(o -> o instanceof Pair<?, ?>, o -> (Pair<?, ?>) o, p -> new PairVisitor(p.getClass(), p));
 
-        var ctx = new Context();
-        RegisterClassVisitorsEvent.EVENT.invoker().call(ctx);
-        REGISTRY.addAll(ctx.getCustomVisitors());
+        var registry = new CustomVisitorRegistry();
+        PacketCapture.getInstance().getApis().forEach(api -> api.onRegisterClassVisitors(registry));
+        REGISTRY.addAll(registry.getCustomVisitors());
     }
 
     private static void registerClassVisitor(Predicate<Object> finder, VisitorFactory<Object> factory) {

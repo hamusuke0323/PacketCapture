@@ -109,6 +109,7 @@ public final class PacketCapture implements ClientModInitializer {
     private final List<PacketDetails> sentPackets = Collections.synchronizedList(Lists.newLinkedList());
     private final List<PacketDetails> receivedPackets = Collections.synchronizedList(Lists.newLinkedList());
     private boolean showCapture;
+    private final List<PacketCaptureApi> apis = Lists.newArrayList();
 
     public PacketCapture() {
         instance = this;
@@ -176,6 +177,16 @@ public final class PacketCapture implements ClientModInitializer {
         });
 
         ForgeConfigRegistry.INSTANCE.register(MOD_ID, Type.CLIENT, Config.SPEC);
+
+        FabricLoader.getInstance().getEntrypointContainers(MOD_ID, PacketCaptureApi.class).forEach(entrypoint -> {
+            var metadata = entrypoint.getProvider().getMetadata();
+            var modId = metadata.getId();
+            try {
+                this.apis.add(entrypoint.getEntrypoint());
+            } catch (Throwable e) {
+                LOGGER.error("Mod {} has a broken impl of PacketCaptureApi", modId, e);
+            }
+        });
     }
 
     public static PacketCapture getInstance() {
@@ -429,5 +440,9 @@ public final class PacketCapture implements ClientModInitializer {
 
     public long getReceivedPacketNum() {
         return this.receivedPacketNum.get();
+    }
+
+    public List<PacketCaptureApi> getApis() {
+        return ImmutableList.copyOf(this.apis);
     }
 }

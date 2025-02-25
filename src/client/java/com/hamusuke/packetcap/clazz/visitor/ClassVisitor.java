@@ -72,6 +72,10 @@ public class ClassVisitor {
         return this.clazz;
     }
 
+    public Object getInstance() {
+        return this.instance;
+    }
+
     public String getFullClassName() {
         return this.clazz.getPackageName() + "." + this.getClassName();
     }
