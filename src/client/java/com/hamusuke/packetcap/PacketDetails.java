@@ -89,7 +89,7 @@ public class PacketDetails {
                 if (fieldHighlighter != null) {
                     var buf = Unpooled.buffer();
                     try {
-                        subHighlights.addAll(fieldHighlighter.createHighlights(this.getPacketIdEndIndex() + 1, buf, visitor.getInstance()));
+                        subHighlights.addAll(fieldHighlighter.write(this.getPacketIdEndIndex() + 1, null, buf, visitor.getInstance()));
                     } finally {
                         buf.release();
                     }

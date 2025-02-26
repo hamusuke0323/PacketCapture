@@ -1,19 +1,22 @@
 package com.hamusuke.packetcap.highlight;
 
 import com.google.common.collect.ForwardingMultimap;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.hamusuke.packetcap.PacketCapture;
 import com.hamusuke.packetcap.PacketCaptureApi;
-import com.hamusuke.packetcap.highlight.DataHighlightInstruction.DataHighlighterBuilder;
+import com.hamusuke.packetcap.highlight.DataHighlightInstruction.DataHighlightInstructionBuilder;
 import com.hamusuke.packetcap.invoker.LoginHelloS2CPacketAccessor;
 import com.hamusuke.packetcap.invoker.LoginKeyC2SPacketAccessor;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
+import com.mojang.datafixers.util.Either;
 import com.mojang.datafixers.util.Pair;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
+import it.unimi.dsi.fastutil.ints.IntList;
 import net.minecraft.component.ComponentChanges;
 import net.minecraft.component.MergedComponentMap;
 import net.minecraft.entity.EquipmentSlot;
@@ -30,6 +33,10 @@ import net.minecraft.network.packet.c2s.login.LoginKeyC2SPacket;
 import net.minecraft.network.packet.c2s.login.LoginQueryResponseC2SPacket;
 import net.minecraft.network.packet.c2s.play.CreativeInventoryActionC2SPacket;
 import net.minecraft.network.packet.s2c.common.CustomPayloadS2CPacket;
+import net.minecraft.network.packet.s2c.common.SynchronizeTagsS2CPacket;
+import net.minecraft.network.packet.s2c.config.DynamicRegistriesS2CPacket;
+import net.minecraft.network.packet.s2c.config.FeaturesS2CPacket;
+import net.minecraft.network.packet.s2c.config.SelectKnownPacksS2CPacket;
 import net.minecraft.network.packet.s2c.login.LoginDisconnectS2CPacket;
 import net.minecraft.network.packet.s2c.login.LoginHelloS2CPacket;
 import net.minecraft.network.packet.s2c.login.LoginQueryRequestPayload;
@@ -38,19 +45,22 @@ import net.minecraft.network.packet.s2c.play.*;
 import net.minecraft.registry.DynamicRegistryManager;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.SerializableRegistries.SerializedRegistryEntry;
+import net.minecraft.registry.VersionedIdentifier;
+import net.minecraft.registry.tag.TagPacketSerializer.Serialized;
 import net.minecraft.text.Text.Serialization;
 import net.minecraft.text.TextCodecs;
 import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.*;
-import static com.hamusuke.packetcap.highlight.instruction.BufInstruction.guessing;
+import static com.hamusuke.packetcap.highlight.instruction.BufInstruction.readAndGuess;
+import static com.hamusuke.packetcap.highlight.instruction.BufInstruction.writeAndGuess;
 
 public class DataHighlightInstructions {
     private static final Map<Class<?>, DataHighlightInstruction<? extends ByteBuf, ?>> HIGHLIGHTERS = Maps.newHashMap();
@@ -77,9 +87,9 @@ public class DataHighlightInstructions {
             }));
 
     public static final DataHighlightInstruction<ByteBuf, Identifier> IDENTIFIER = register(Identifier.class, builder -> builder
-            .sub(STRING, identifier -> "ID (String)", Identifier::toString));
+            .field(STRING, Identifier::toString));
 
-    public static final DataHighlightInstruction<RegistryByteBuf, RegistryKey> REGISTRY_KEY = register(RegistryKey.class, builder -> builder
+    public static final DataHighlightInstruction<ByteBuf, RegistryKey> REGISTRY_KEY = register(RegistryKey.class, builder -> builder
             .sub(IDENTIFIER, Identifier::toString, RegistryKey::getValue));
 
     public static final DataHighlightInstruction<ByteBuf, Property> PROPERTY = register(Property.class, builder -> builder
@@ -103,6 +113,23 @@ public class DataHighlightInstructions {
             .field(VAR_INT.withDescription(count -> count <= 0 ? "Empty" : "Count: " + count), ItemStack::getCount, count -> count > 0)
             .packetCodec(PacketCodecs.registryEntry(RegistryKeys.ITEM), e -> "ID: " + e.getIdAsString(), ItemStack::getRegistryEntry)
             .packetCodec(ComponentChanges.PACKET_CODEC, componentChanges -> "ComponentChanges", stack -> stack.getComponents() instanceof MergedComponentMap m ? m.getChanges() : ComponentChanges.EMPTY));
+
+    public static final DataHighlightInstruction<ByteBuf, VersionedIdentifier> VERSIONED_IDENTIFIER = register(VersionedIdentifier.class, builder -> builder
+            .field(STRING, VersionedIdentifier::namespace)
+            .field(STRING, VersionedIdentifier::id)
+            .field(STRING, VersionedIdentifier::version));
+
+    public static final DataHighlightInstruction<ByteBuf, SerializedRegistryEntry> SERIALIZED_REGISTRY_ENTRY = register(SerializedRegistryEntry.class, builder -> builder
+            .field(IDENTIFIER, SerializedRegistryEntry::id)
+            .packetCodec(PacketCodecs.NBT_ELEMENT.collect(PacketCodecs::optional), nbt -> nbt.isEmpty() ? "Empty" : "NBT Element", SerializedRegistryEntry::data));
+
+    public static final DataHighlightInstruction<PacketByteBuf, IntList> INT_LIST = packet(IntList.class, builder -> builder
+            .listWithSize(VAR_INT, Function.identity()));
+
+    public static final DataHighlightInstruction<PacketByteBuf, Serialized> TAG_SERIALIZED = packet(Serialized.class, builder -> builder
+            .mapWithSize(IDENTIFIER, INT_LIST, m -> "Contents", Either.right(buf -> {
+                return buf.readMap(Maps::newLinkedHashMapWithExpectedSize, PacketByteBuf::readIdentifier, PacketByteBuf::readIntList);
+            })));
 
     static {
         // HANDSHAKE
@@ -140,36 +167,33 @@ public class DataHighlightInstructions {
                 .sub(ITEM_STACK, CreativeInventoryActionC2SPacket::stack));
 
         packet(CustomPayloadC2SPacket.class, builder -> builder
-                .sub(DataHighlighterBuilder.<PacketByteBuf, CustomPayload>builder()
+                .sub(DataHighlightInstructionBuilder.<PacketByteBuf, CustomPayload>builder()
                         .sub(IDENTIFIER, id -> "Payload ID: " + id.toString(), payload -> payload.getId().id())
-                        .field(guessing((b, payload) ->
+                        .field(writeAndGuess((b, payload) ->
                                                 b.writeIdentifier(payload.getId().id()),
                                         (b, payload) ->
                                                 CustomPayloadC2SPacket.CODEC.encode(b, new CustomPayloadC2SPacket(payload)),
                                         packet -> "Payload Data"),
                                 Function.identity()).build(), CustomPayloadC2SPacket::payload));
 
-        registry(CustomPayloadS2CPacket.class, builder -> builder
-                .sub(DataHighlighterBuilder.<RegistryByteBuf, CustomPayload>builder()
-                        .sub(IDENTIFIER, id -> "Payload ID: " + id.toString(), payload -> payload.getId().id())
-                        .field(guessing((b, payload) ->
-                                                b.writeIdentifier(payload.getId().id()),
-                                        (b, payload) -> {
-                                            // Either
-                                            int start = b.writerIndex();
-                                            CustomPayloadS2CPacket.PLAY_CODEC.encode(b, new CustomPayloadS2CPacket(payload));
-                                            if (start != b.writerIndex()) { // If succeeded writing, abort.
-                                                return;
-                                            }
 
-                                            CustomPayloadS2CPacket.CONFIGURATION_CODEC.encode(b, new CustomPayloadS2CPacket(payload));
-                                        },
+        registry(CustomPayloadS2CPacket.class, builder -> builder
+                .sub(DataHighlightInstructionBuilder.<RegistryByteBuf, CustomPayload>builder()
+                        .sub(IDENTIFIER, id -> "Payload ID: " + id.toString(), payload -> payload.getId().id())
+                        .field(readAndGuess((b) -> b.readerIndex(b.readerIndex() + b.readableBytes()),
                                         packet -> "Payload Data"),
                                 Function.identity()).build(), CustomPayloadS2CPacket::payload));
 
+        packet(DynamicRegistriesS2CPacket.class, builder -> builder
+                .field(REGISTRY_KEY, DynamicRegistriesS2CPacket::registry)
+                .listWithSize(SERIALIZED_REGISTRY_ENTRY, DynamicRegistriesS2CPacket::entries));
+
+        registry(EntitiesDestroyS2CPacket.class, builder -> builder
+                .field(INT_LIST, EntitiesDestroyS2CPacket::getEntityIds));
+
         registry(EntityEquipmentUpdateS2CPacket.class, builder -> builder
                 .field(VAR_INT, EntityEquipmentUpdateS2CPacket::getEntityId)
-                .list(DataHighlighterBuilder.<RegistryByteBuf, Pair<EquipmentSlot, ItemStack>>builder()
+                .list(DataHighlightInstructionBuilder.<RegistryByteBuf, Pair<EquipmentSlot, ItemStack>>builder()
                         .field(BYTE.withDescription(slot -> {
                             if (EquipmentSlot.values().length <= slot) {
                                 return "";
@@ -177,12 +201,19 @@ public class DataHighlightInstructions {
 
                             return "Equipment Slot: " + EquipmentSlot.values()[slot];
                         }), p -> (byte) (p.getFirst().ordinal()))
-                        .sub(ITEM_STACK, Pair::getSecond).build(), c -> "", EntityEquipmentUpdateS2CPacket::getEquipmentList));
+                        .sub(ITEM_STACK, i -> "Item Stack", Pair::getSecond).build(), c -> "", EntityEquipmentUpdateS2CPacket::getEquipmentList));
+
+        packet(FeaturesS2CPacket.class, builder -> builder
+                .listWithSize(IDENTIFIER, c -> "", Either.right(buf -> {
+                    return buf.readCollection(Lists::newArrayListWithExpectedSize, PacketByteBuf::readIdentifier);
+                })));
 
         registry(GameJoinS2CPacket.class, builder -> builder
                 .constant(INT)
                 .constant(BOOL)
-                .listWithSize(REGISTRY_KEY, p -> List.copyOf(p.dimensionIds()))
+                .listWithSize(REGISTRY_KEY, c -> "", Either.right(buf -> {
+                    return buf.readCollection(Lists::newArrayListWithExpectedSize, (b) -> b.readRegistryKey(RegistryKeys.WORLD));
+                }))
                 .field(VAR_INT, GameJoinS2CPacket::maxPlayers)
                 .field(VAR_INT, GameJoinS2CPacket::viewDistance)
                 .field(VAR_INT, GameJoinS2CPacket::simulationDistance)
@@ -192,17 +223,15 @@ public class DataHighlightInstructions {
                 .packetEncoderV(CommonPlayerSpawnInfo::write, GameJoinS2CPacket::commonPlayerSpawnInfo)
                 .constant(BOOL));
 
-        registry(WorldTimeUpdateS2CPacket.class, builder -> builder
-                .constant(LONG)
-                .constant(LONG)
-                .constant(BOOL));
-
-        registry(EntitiesDestroyS2CPacket.class, builder -> builder
-                .listWithSize(VAR_INT, EntitiesDestroyS2CPacket::getEntityIds));
-
         registry(GameMessageS2CPacket.class, builder -> builder
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, GameMessageS2CPacket::content)
                 .constant(BOOL));
+
+        registry(InventoryS2CPacket.class, builder -> builder
+                .field(VAR_INT, InventoryS2CPacket::getSyncId)
+                .field(VAR_INT, InventoryS2CPacket::getRevision)
+                .listWithSize(ITEM_STACK, InventoryS2CPacket::getContents)
+                .field(ITEM_STACK, InventoryS2CPacket::getCursorStack));
 
         registry(ScreenHandlerSlotUpdateS2CPacket.class, builder -> builder
                 .field(VAR_INT, ScreenHandlerSlotUpdateS2CPacket::getSyncId)
@@ -210,20 +239,33 @@ public class DataHighlightInstructions {
                 .field(SHORT, p -> (short) p.getSlot())
                 .sub(ITEM_STACK, ScreenHandlerSlotUpdateS2CPacket::getStack));
 
+        register(SelectKnownPacksS2CPacket.class, builder -> builder
+                .listWithSize(VERSIONED_IDENTIFIER, SelectKnownPacksS2CPacket::knownPacks));
+
+        packet(SynchronizeTagsS2CPacket.class, builder -> builder
+                .mapWithSize(REGISTRY_KEY, TAG_SERIALIZED, m -> "", Either.right(buf -> {
+                    return buf.readMap(Maps::newLinkedHashMapWithExpectedSize, PacketByteBuf::readRegistryRefKey, Serialized::fromBuf);
+                })));
+
+        registry(WorldTimeUpdateS2CPacket.class, builder -> builder
+                .constant(LONG)
+                .constant(LONG)
+                .constant(BOOL));
+
         // Fire event
         PacketCapture.getInstance().getApis().forEach(PacketCaptureApi::onRegisterHighlightInstructions);
     }
 
-    public static <T> void packet(Class<T> clazz, Consumer<DataHighlighterBuilder<PacketByteBuf, T>> consumer) {
-        register(clazz, consumer);
+    public static <B extends PacketByteBuf, T> DataHighlightInstruction<B, T> packet(Class<T> clazz, Consumer<DataHighlightInstructionBuilder<B, T>> consumer) {
+        return register(clazz, consumer);
     }
 
-    public static <T> void registry(Class<T> clazz, Consumer<DataHighlighterBuilder<RegistryByteBuf, T>> consumer) {
-        register(clazz, consumer);
+    public static <B extends RegistryByteBuf, T> DataHighlightInstruction<B, T> registry(Class<T> clazz, Consumer<DataHighlightInstructionBuilder<B, T>> consumer) {
+        return register(clazz, consumer);
     }
 
-    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> register(Class<T> clazz, Consumer<DataHighlighterBuilder<B, T>> consumer) {
-        var builder = DataHighlighterBuilder.<B, T>builder();
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> register(Class<T> clazz, Consumer<DataHighlightInstructionBuilder<B, T>> consumer) {
+        var builder = DataHighlightInstructionBuilder.<B, T>builder();
         consumer.accept(builder);
         var built = builder.build();
         HIGHLIGHTERS.put(clazz, built);
@@ -246,8 +288,8 @@ public class DataHighlightInstructions {
                 .sub(sub, descriptor, Function.identity()));
     }
 
-    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> dontRegister(Consumer<DataHighlighterBuilder<B, T>> consumer) {
-        var builder = DataHighlighterBuilder.<B, T>builder();
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> dontRegister(Consumer<DataHighlightInstructionBuilder<B, T>> consumer) {
+        var builder = DataHighlightInstructionBuilder.<B, T>builder();
         consumer.accept(builder);
         return builder.build();
     }

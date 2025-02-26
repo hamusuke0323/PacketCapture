@@ -41,6 +41,7 @@ import net.minecraft.util.Identifier;
 import net.neoforged.fml.config.ModConfig.Type;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
@@ -214,23 +215,28 @@ public final class PacketCapture implements ClientModInitializer {
         stopwatch.stop();
     }
 
-    private List<Highlight<?>> createHighlights(Packet<?> packet, int packetEndIndex) {
+    private <B extends ByteBuf, P extends Packet<?>> List<Highlight<?>> createHighlights(@Nullable B received, P packet, int packetEndIndex) {
         List<Highlight<?>> highlights = Lists.newArrayList();
-        DataHighlightInstruction inst = DataHighlightInstructions.getFrom(packet.getClass());
-        if (inst != null) {
-            DynamicRegistryManager manager;
-            while (this.mc.player == null) {
-                Thread.yield();
+
+        try {
+            DataHighlightInstruction<B, P> inst = (DataHighlightInstruction<B, P>) DataHighlightInstructions.getFrom(packet.getClass());
+            if (inst != null) {
+                DynamicRegistryManager manager;
+                while (this.mc.player == null) {
+                    Thread.yield();
+                }
+                manager = this.mc.player.getRegistryManager();
+                var reg = new RegistryByteBuf(Unpooled.buffer(), manager); // Free buf
+                try {
+                    highlights.addAll(inst.write(packetEndIndex + 1, received == null ? null : (B) new RegistryByteBuf(received, manager), (B) reg, packet));
+                } catch (Throwable t) {
+                    LOGGER.warn("Failed to create highlights for " + packet.getClass(), t);
+                } finally {
+                    reg.release();
+                }
             }
-            manager = this.mc.player.getRegistryManager();
-            var reg = new RegistryByteBuf(Unpooled.buffer(), manager);
-            try {
-                highlights.addAll(inst.createHighlights(packetEndIndex + 1, reg, packet));
-            } catch (Throwable t) {
-                LOGGER.warn("Failed to create highlights for " + packet.getClass(), t);
-            } finally {
-                reg.release();
-            }
+        } catch (Throwable e) {
+            LOGGER.warn("Failed to create highlights for " + packet.getClass(), e);
         }
 
         return highlights;
@@ -250,7 +256,7 @@ public final class PacketCapture implements ClientModInitializer {
                     }
 
                     int end = VarInts.getSizeInBytes(packetId) - 1;
-                    return new PacketDetails(packet, copied, packetId, end, this.createHighlights(packet, end));
+                    return new PacketDetails(packet, copied, packetId, end, this.createHighlights(null, packet, end));
                 }, SENT_PACKET_DETAIL_RETRIEVER)
                 .whenComplete((dedicatedServerPacketDetails, throwable) -> {
                     if (throwable != null) {
@@ -286,7 +292,8 @@ public final class PacketCapture implements ClientModInitializer {
                     }
 
                     int end = VarInts.getSizeInBytes(packetId) - 1;
-                    return new PacketDetails(packet, delivered, packetId, end, this.createHighlights(packet, end));
+                    VarInts.read(byteBuf.resetReaderIndex()); // only read packet id.
+                    return new PacketDetails(packet, delivered, packetId, end, this.createHighlights(byteBuf, packet, end));
                 }, RECEIVED_PACKET_DETAIL_RETRIEVER)
                 .whenComplete((details, throwable) -> {
                     ReferenceCountUtil.release(byteBuf);
