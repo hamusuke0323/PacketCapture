@@ -25,6 +25,10 @@ public class BasicInstructions {
     public static final Descriptor<ByteBuf, Integer> VAR_INT = o -> valueOnly(VarInts::getSizeInBytes, o);
     public static final Descriptor<ByteBuf, UUID> UUID = o -> constant(16, o);
 
+    public static Function<Boolean, String> prefixed(String prefix) {
+        return b -> prefix + ": " + (b ? "true" : "false");
+    }
+
     public interface Descriptor<B extends ByteBuf, T> {
         BufInstruction<B, T> withDescription(Function<T, String> descriptor);
     }

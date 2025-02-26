@@ -97,9 +97,7 @@ public class PacketDetails {
             }
 
             this.mapForHighlighting.put(fields.getFirst().getName(), new Highlight<>(new HighlightRange(this.getPacketIdEndIndex() + 1, this.getSize() - 1), visitor == null ? null : visitor.getInstance(), "", subHighlights));
-        }
-
-        if (fields.size() >= this.highlights.size()) {
+        } else if (fields.size() >= this.highlights.size()) {
             for (int i = 0; i < this.highlights.size(); i++) {
                 this.mapForHighlighting.put(fields.get(i).getName(), this.highlights.get(i));
             }

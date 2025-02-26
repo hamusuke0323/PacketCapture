@@ -16,6 +16,7 @@ import net.minecraft.client.gui.widget.AlwaysSelectedEntryListWidget;
 import net.minecraft.screen.ScreenTexts;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.Objects;
@@ -34,7 +35,7 @@ public class ClassFieldList extends AlwaysSelectedEntryListWidget<AbstractEntry>
         for (int i = 0; i < fields.size(); i++) {
             var field = fields.get(i);
             var last = i >= fields.size() - 1;
-            this.addEntry(field, field.getVisitor(), field.getDescription() + (array && !last ? "," : ""), packetDetailsScreen, parent);
+            this.addEntry(field, field.getVisitor(), Formatting.strip(field.getDescription()) + (array && !last ? "," : ""), packetDetailsScreen, parent);
             this.addEntry(new TextEntry(Text.literal(" ").styled(style -> style.withFont(PacketCapture.MONO_FONT)).asOrderedText()));
         }
 
