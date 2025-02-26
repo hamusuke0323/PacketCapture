@@ -153,11 +153,11 @@ public class DataHighlightInstructions {
             })));
 
     public static final DataHighlightInstruction<ByteBuf, BlockPos> BLOCK_POS = register(BlockPos.class, builder -> builder
-            .field(LONG, BlockPos::asLong));
+            .field(LONG.withDescription(l -> "Position(x, y, z) = (" + BlockPos.fromLong(l).toShortString() + ")"), BlockPos::asLong));
 
     public static final DataHighlightInstruction<PacketByteBuf, GlobalPos> GLOBAL_POS = packet(GlobalPos.class, builder -> builder
             .sub(REGISTRY_KEY, e -> "Dimension: " + e.toString(), GlobalPos::dimension)
-            .sub(BLOCK_POS, e -> "Position(x, y, z) = (" + e.toShortString() + ")", GlobalPos::pos));
+            .field(BLOCK_POS, GlobalPos::pos));
 
     public static final DataHighlightInstruction<RegistryByteBuf, CommonPlayerSpawnInfo> COMMON_PLAYER_SPAWN_INFO = registry(CommonPlayerSpawnInfo.class, builder -> builder
             .packetCodec(DimensionType.PACKET_CODEC, e -> "Dimension Type: " + e.getIdAsString(), CommonPlayerSpawnInfo::dimensionType)
@@ -378,6 +378,31 @@ public class DataHighlightInstructions {
         registry(CreativeInventoryActionC2SPacket.class, builder -> builder
                 .constant(SHORT)
                 .field(ITEM_STACK, CreativeInventoryActionC2SPacket::stack));
+
+        packet(JigsawGeneratingC2SPacket.class, builder -> builder
+                .field(BLOCK_POS, JigsawGeneratingC2SPacket::getPos)
+                .field(VAR_INT, JigsawGeneratingC2SPacket::getMaxDepth)
+                .field(BOOL, JigsawGeneratingC2SPacket::shouldKeepJigsaws));
+
+        register(PickItemFromBlockC2SPacket.class, builder -> builder
+                .field(BLOCK_POS, PickItemFromBlockC2SPacket::pos)
+                .field(BOOL, PickItemFromBlockC2SPacket::includeData));
+
+        register(PickItemFromEntityC2SPacket.class, builder -> builder
+                .field(VAR_INT, PickItemFromEntityC2SPacket::id)
+                .field(BOOL, PickItemFromEntityC2SPacket::includeData));
+
+        // TODO: PlayerActionC2SPacket
+        // TODO: PlayerInteractBlockC2SPacket
+        // TODO: PlayerInteractEntityC2SPacket
+
+        packet(PlayerInteractItemC2SPacket.class, builder -> builder
+                .field(VAR_INT, p -> p.getHand().ordinal())
+                .field(VAR_INT, PlayerInteractItemC2SPacket::getSequence)
+                .field(FLOAT, PlayerInteractItemC2SPacket::getYaw)
+                .field(FLOAT, PlayerInteractItemC2SPacket::getPitch));
+
+        // TODO: PlayerMove
 
 
     }
