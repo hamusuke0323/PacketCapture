@@ -36,7 +36,19 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
     public List<Highlight<?>> write(int curWriterIndex, @Nullable B receivedByteBuf, B buf, V value) {
         List<Highlight<?>> highlights = Lists.newArrayList();
 
+        boolean ignoreRemaining = false;
+
         for (var instruction : this.instructions) {
+            if (instruction instanceof RestartInstruction) {
+                ignoreRemaining = false; // resume
+                continue;
+            }
+
+            if (ignoreRemaining) {
+                highlights.add(NO_HIGHLIGHT);
+                continue;
+            }
+
             if (instruction instanceof SameRefInstruction<?, ?> sameRef) {
                 highlights.add(highlights.get(sameRef.getHighlightIndex())); // Same as the previous highlight specified by the index.
                 continue;
@@ -56,7 +68,7 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
             }
 
             if (!instruction.shouldContinue(receivedByteBuf, value)) {
-                break;
+                ignoreRemaining = true;
             }
         }
 
@@ -112,6 +124,11 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
 
         public DataHighlightInstructionBuilder<B, T> sameAs(int highlightIndex) {
             this.instructions.add(new SameRefInstructionImpl<>(highlightIndex));
+            return this;
+        }
+
+        public DataHighlightInstructionBuilder<B, T> restart() {
+            this.instructions.add(RestartInstruction.INSTANCE);
             return this;
         }
 
@@ -185,11 +202,11 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
             return this;
         }
 
-        public <V> DataHighlightInstructionBuilder<B, T> packetCodec(PacketCodec<B, V> codec, Function<T, V> fieldGetter) {
+        public <V> DataHighlightInstructionBuilder<B, T> packetCodec(PacketCodec<? super B, V> codec, Function<T, V> fieldGetter) {
             return this.packetCodec(codec, v -> "", fieldGetter);
         }
 
-        public <V> DataHighlightInstructionBuilder<B, T> packetCodec(PacketCodec<B, V> codec, Function<V, String> descriptor, Function<T, V> fieldGetter) {
+        public <V> DataHighlightInstructionBuilder<B, T> packetCodec(PacketCodec<? super B, V> codec, Function<V, String> descriptor, Function<T, V> fieldGetter) {
             this.instructions.add(BufInstruction.writeAndGuess((byteBuf, o) -> codec.encode(byteBuf, fieldGetter.apply(o)), o -> descriptor.apply(fieldGetter.apply(o))));
             return this;
         }

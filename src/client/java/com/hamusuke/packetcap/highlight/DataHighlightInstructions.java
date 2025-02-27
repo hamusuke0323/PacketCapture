@@ -20,8 +20,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.ints.IntList;
+import net.minecraft.advancement.*;
+import net.minecraft.advancement.criterion.CriterionProgress;
+import net.minecraft.block.Block;
 import net.minecraft.block.entity.CommandBlockBlockEntity;
 import net.minecraft.block.entity.JigsawBlockEntity;
+import net.minecraft.client.resource.language.I18n;
 import net.minecraft.component.ComponentChanges;
 import net.minecraft.component.MergedComponentMap;
 import net.minecraft.entity.EquipmentSlot;
@@ -31,11 +35,14 @@ import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.codec.PacketEncoder;
+import net.minecraft.network.encryption.PlayerPublicKey;
+import net.minecraft.network.encryption.PublicPlayerSession;
 import net.minecraft.network.message.ArgumentSignatureDataMap;
 import net.minecraft.network.message.ArgumentSignatureDataMap.Entry;
 import net.minecraft.network.message.ChatVisibility;
 import net.minecraft.network.message.LastSeenMessageList.Acknowledgment;
 import net.minecraft.network.message.MessageSignatureData;
+import net.minecraft.network.packet.BrandCustomPayload;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.network.packet.c2s.common.ClientOptionsC2SPacket;
 import net.minecraft.network.packet.c2s.common.CustomPayloadC2SPacket;
@@ -69,21 +76,21 @@ import net.minecraft.registry.VersionedIdentifier;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.TagPacketSerializer.Serialized;
 import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.state.State;
 import net.minecraft.text.Text.Serialization;
 import net.minecraft.text.TextCodecs;
 import net.minecraft.util.Arm;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.GlobalPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.*;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.dimension.DimensionType;
 import org.jetbrains.annotations.Nullable;
 
+import java.security.Key;
+import java.security.PublicKey;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
@@ -257,6 +264,51 @@ public class DataHighlightInstructions {
             .field(DOUBLE.withDescription(y -> "y: " + y), Vec3d::getY)
             .field(DOUBLE.withDescription(z -> "z: " + z), Vec3d::getZ));
 
+    public static final DataHighlightInstruction<ByteBuf, PublicKey> PUBLIC_KEY = register(PublicKey.class, builder -> builder
+            .field(BYTE_ARRAY_WITH_LEN, Key::getEncoded));
+
+    public static final DataHighlightInstruction<PacketByteBuf, PlayerPublicKey.PublicKeyData> PUBLIC_KEY_DATA = packet(PlayerPublicKey.PublicKeyData.class, builder -> builder
+            .compoundField(INSTANT, i -> "Expires at: " + i.toString(), PlayerPublicKey.PublicKeyData::expiresAt)
+            .compoundField(PUBLIC_KEY, k -> "Key", PlayerPublicKey.PublicKeyData::key)
+            .compoundField(BYTE_ARRAY_WITH_LEN, ks -> "Key signature", PlayerPublicKey.PublicKeyData::keySignature));
+
+    public static final DataHighlightInstruction<PacketByteBuf, PublicPlayerSession.Serialized> PPS_SERIALIZED = packet(PublicPlayerSession.Serialized.class, builder -> builder
+            .field(UUID.withDescription(id -> "Session id: " + id), PublicPlayerSession.Serialized::sessionId)
+            .compoundField(PUBLIC_KEY_DATA, k -> "Public key data", PublicPlayerSession.Serialized::publicKeyData));
+
+    public static final DataHighlightInstruction<PacketByteBuf, CriterionProgress> CRITERION_PROGRESS = packet(CriterionProgress.class, builder -> builder
+            .compoundField(nullable(i -> "Obtained time: " + i, INSTANT), CriterionProgress::getObtainedTime));
+
+    public static final DataHighlightInstruction<PacketByteBuf, AdvancementProgress> ADVANCEMENT_PROGRESS = packet(AdvancementProgress.class, builder -> builder
+            .mapWithSize(STRING, CRITERION_PROGRESS, m -> "Criteria Progresses", Either.right(buf -> {
+                return buf.readMap(Maps::newLinkedHashMapWithExpectedSize, PacketByteBuf::readString, CriterionProgress::fromPacket);
+            })));
+
+    public static final DataHighlightInstruction<PacketByteBuf, AdvancementRequirements> ADVANCEMENT_REQUIREMENTS = packet(AdvancementRequirements.class, builder -> builder
+            .listWithSize(DataHighlightInstructionBuilder.<PacketByteBuf, List<String>>builder()
+                    .listWithSize(STRING, Function.identity()).build(), AdvancementRequirements::requirements));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, AdvancementDisplay> ADVANCEMENT_DISPLAY = registry(AdvancementDisplay.class, builder -> builder
+            .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, AdvancementDisplay::getTitle)
+            .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, AdvancementDisplay::getDescription)
+            .compoundField(ITEM_STACK, i -> "Icon", AdvancementDisplay::getIcon)
+            .field(VAR_INT.withDescription(i -> "Frame").xmap(Enum::ordinal), AdvancementDisplay::getFrame)
+            .field(INT.withDescription(nil -> "is background present\nshowToast\nhidden").xmap(p -> 0), Function.identity(), d -> d.getBackground().isPresent())
+            .compoundField(IDENTIFIER.xmap(Optional::get), t -> "Background: " + t.get(), AdvancementDisplay::getBackground)
+            .restart()
+            .field(FLOAT.withDescription(f -> "x: " + f), AdvancementDisplay::getX)
+            .field(FLOAT.withDescription(f -> "y: " + f), AdvancementDisplay::getY));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, Advancement> ADVANCEMENT = registry(Advancement.class, builder -> builder
+            .compoundField(optional(id -> "Parent: " + id, IDENTIFIER), Advancement::parent)
+            .compoundField(optional(d -> "Advancement Display", ADVANCEMENT_DISPLAY), Advancement::display)
+            .compoundField(ADVANCEMENT_REQUIREMENTS, r -> "Advancement Requirements", Advancement::requirements)
+            .field(BOOL.withDescription(prefixed("Sends Telemetry Event")), Advancement::sendsTelemetryEvent));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, AdvancementEntry> ADVANCEMENT_ENTRY = registry(AdvancementEntry.class, builder -> builder
+            .compoundField(IDENTIFIER, id -> "ID: " + id, AdvancementEntry::id)
+            .compoundField(ADVANCEMENT, a -> "Advancement", AdvancementEntry::value));
+
     static {
         // HANDSHAKE
         registerHandshakePackets();
@@ -276,6 +328,10 @@ public class DataHighlightInstructions {
         // PLAY
         registerPlayC2SPackets();
         registerPlayS2CPackets();
+
+        // CUSTOM
+        registerC2SPayloads();
+        registerS2CPayloads();
 
         // Fire event
         PacketCapture.getInstance().getApis().forEach(PacketCaptureApi::onRegisterHighlightInstructions);
@@ -403,7 +459,6 @@ public class DataHighlightInstructions {
                 .constant(LONG)
                 .compoundField(nullable(d -> "", MESSAGE_SIGNATURE_DATA), ChatMessageC2SPacket::signature)
                 .compoundField(LSM_ACK, ChatMessageC2SPacket::acknowledgment));
-
         registry(ClickSlotC2SPacket.class, builder -> builder
                 .field(VAR_INT, ClickSlotC2SPacket::getSyncId)
                 .field(VAR_INT, ClickSlotC2SPacket::getRevision)
@@ -416,59 +471,47 @@ public class DataHighlightInstructions {
                         m -> "",
                         Either.left(ClickSlotC2SPacket::getModifiedStacks))
                 .indexed(5).compoundField(ITEM_STACK, ClickSlotC2SPacket::getStack));
-
         packet(ClientCommandC2SPacket.class, builder -> builder
                 .field(VAR_INT, ClientCommandC2SPacket::getEntityId)
                 .field(VAR_INT.withDescription(o -> "Mode: " + Mode.values()[o]), p -> p.getMode().ordinal())
                 .field(VAR_INT, ClientCommandC2SPacket::getMountJumpHeight));
-
         packet(ClientStatusC2SPacket.class, builder -> builder
                 .field(VAR_INT.withDescription(o -> "Mode: " + ClientStatusC2SPacket.Mode.values()[o]), p -> p.getMode().ordinal()));
-
         packet(CraftRequestC2SPacket.class, builder -> builder
                 .field(VAR_INT, CraftRequestC2SPacket::syncId)
                 .field(NETWORK_RECIPE_ID, CraftRequestC2SPacket::recipeId)
                 .field(BOOL, CraftRequestC2SPacket::craftAll));
-
         registry(CreativeInventoryActionC2SPacket.class, builder -> builder
                 .constant(SHORT)
                 .compoundField(ITEM_STACK, CreativeInventoryActionC2SPacket::stack));
-
         packet(JigsawGeneratingC2SPacket.class, builder -> builder
                 .field(BLOCK_POS, JigsawGeneratingC2SPacket::getPos)
                 .field(VAR_INT, JigsawGeneratingC2SPacket::getMaxDepth)
                 .field(BOOL, JigsawGeneratingC2SPacket::shouldKeepJigsaws));
-
         register(PickItemFromBlockC2SPacket.class, builder -> builder
                 .field(BLOCK_POS, PickItemFromBlockC2SPacket::pos)
                 .field(BOOL, PickItemFromBlockC2SPacket::includeData));
-
         register(PickItemFromEntityC2SPacket.class, builder -> builder
                 .field(VAR_INT, PickItemFromEntityC2SPacket::id)
                 .field(BOOL, PickItemFromEntityC2SPacket::includeData));
-
         packet(PlayerActionC2SPacket.class, builder -> builder
                 .indexed(2).field(VAR_INT.withDescription(o -> "Action: " + PlayerActionC2SPacket.Action.values()[o]), p -> p.getAction().ordinal())
                 .indexed(0).field(BLOCK_POS, PlayerActionC2SPacket::getPos)
                 .indexed(1).field(BYTE.withDescription(b -> "Direction: " + Direction.byId(b)), p -> (byte) p.getDirection().getId())
                 .indexed(3).field(VAR_INT, PlayerActionC2SPacket::getSequence));
-
         packet(PlayerInteractBlockC2SPacket.class, builder -> builder
                 .indexed(1).field(VAR_INT.withDescription(o -> "Hand: " + Hand.values()[o]), p -> p.getHand().ordinal())
                 .indexed(0).compoundField(BLOCK_HIT_RESULT, PlayerInteractBlockC2SPacket::getBlockHitResult)
                 .indexed(2).field(VAR_INT, PlayerInteractBlockC2SPacket::getSequence));
-
         packet(PlayerInteractEntityC2SPacket.class, builder -> builder
                 .field(VAR_INT, p -> p.entityId)
                 .compoundField(INTERACT_TYPE_HANDLER, p -> p.type)
                 .constant(BOOL));
-
         packet(PlayerInteractItemC2SPacket.class, builder -> builder
                 .field(VAR_INT, p -> p.getHand().ordinal())
                 .field(VAR_INT, PlayerInteractItemC2SPacket::getSequence)
                 .field(FLOAT, PlayerInteractItemC2SPacket::getYaw)
                 .field(FLOAT, PlayerInteractItemC2SPacket::getPitch));
-
         packet(PlayerMoveC2SPacket.Full.class, builder -> builder
                 .constant(DOUBLE)
                 .constant(DOUBLE)
@@ -479,7 +522,6 @@ public class DataHighlightInstructions {
                 .sameAs(5)
                 .notBeWritten()
                 .notBeWritten());
-
         packet(PlayerMoveC2SPacket.PositionAndOnGround.class, builder -> builder
                 .constant(DOUBLE)
                 .constant(DOUBLE)
@@ -490,7 +532,6 @@ public class DataHighlightInstructions {
                 .sameAs(5)
                 .notBeWritten()
                 .notBeWritten());
-
         packet(PlayerMoveC2SPacket.LookAndOnGround.class, builder -> builder
                 .notBeWritten()
                 .notBeWritten()
@@ -501,7 +542,6 @@ public class DataHighlightInstructions {
                 .sameAs(5)
                 .notBeWritten()
                 .notBeWritten());
-
         packet(PlayerMoveC2SPacket.OnGroundOnly.class, builder -> builder
                 .notBeWritten()
                 .notBeWritten()
@@ -512,31 +552,25 @@ public class DataHighlightInstructions {
                 .sameAs(5)
                 .notBeWritten()
                 .notBeWritten());
-
-        // TODO: PlayerSession
-
+        packet(PlayerSessionC2SPacket.class, builder -> builder
+                .compoundField(PPS_SERIALIZED, PlayerSessionC2SPacket::chatSession));
         packet(QueryBlockNbtC2SPacket.class, builder -> builder
                 .field(VAR_INT, QueryBlockNbtC2SPacket::getTransactionId)
                 .compoundField(BLOCK_POS, QueryBlockNbtC2SPacket::getPos));
-
         packet(QueryEntityNbtC2SPacket.class, builder -> builder
                 .field(VAR_INT, QueryEntityNbtC2SPacket::getTransactionId)
                 .field(VAR_INT, QueryEntityNbtC2SPacket::getEntityId));
-
         packet(RecipeCategoryOptionsC2SPacket.class, builder -> builder
                 .field(VAR_INT.withDescription(o -> "Recipe Book Type: " + RecipeBookType.values()[o]).xmap(Enum::ordinal), RecipeCategoryOptionsC2SPacket::getCategory)
                 .constant(BOOL)
                 .constant(BOOL));
-
         packet(RequestCommandCompletionsC2SPacket.class, builder -> builder
                 .field(VAR_INT, RequestCommandCompletionsC2SPacket::getCompletionId)
                 .compoundField(STRING, RequestCommandCompletionsC2SPacket::getPartialCommand));
-
         packet(SlotChangedStateC2SPacket.class, builder -> builder
                 .field(VAR_INT, SlotChangedStateC2SPacket::slotId)
                 .field(VAR_INT, SlotChangedStateC2SPacket::screenHandlerId)
                 .constant(BOOL));
-
         registry(UpdateBeaconC2SPacket.class, builder -> builder
                 .compoundField(
                         optional(t -> "Status Effect: " + t.getIdAsString(), DataHighlightInstructionBuilder.<RegistryByteBuf, RegistryEntry<StatusEffect>>builder()
@@ -544,7 +578,6 @@ public class DataHighlightInstructions {
                 .compoundField(
                         optional(t -> "Status Effect: " + t.getIdAsString(), DataHighlightInstructionBuilder.<RegistryByteBuf, RegistryEntry<StatusEffect>>builder()
                                 .packetEncoder(PacketCodecs.registryEntry(RegistryKeys.STATUS_EFFECT), Function.identity()).build()), UpdateBeaconC2SPacket::secondary));
-
         packet(UpdateCommandBlockC2SPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, UpdateCommandBlockC2SPacket::getPos)
                 .compoundField(STRING, UpdateCommandBlockC2SPacket::getCommand)
@@ -552,15 +585,12 @@ public class DataHighlightInstructions {
                 .indexed(2).constant(BYTE)
                 .indexed(3).sameAs(3)
                 .indexed(4).sameAs(3));
-
         packet(UpdateCommandBlockMinecartC2SPacket.class, builder -> builder
                 .field(VAR_INT, p -> p.entityId)
                 .compoundField(STRING, UpdateCommandBlockMinecartC2SPacket::getCommand)
                 .constant(BOOL));
-
         packet(UpdateDifficultyC2SPacket.class, builder -> builder
                 .field(BYTE.withDescription(o -> "Difficulty: " + Difficulty.byId(o)).xmap(Integer::byteValue).xmap(Difficulty::getId), UpdateDifficultyC2SPacket::getDifficulty));
-
         packet(UpdateJigsawC2SPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, UpdateJigsawC2SPacket::getPos)
                 .compoundField(IDENTIFIER, UpdateJigsawC2SPacket::getName)
@@ -570,14 +600,33 @@ public class DataHighlightInstructions {
                 .compoundField(STRING.xmap(JigsawBlockEntity.Joint::asString), UpdateJigsawC2SPacket::getJointType)
                 .field(VAR_INT, UpdateJigsawC2SPacket::getSelectionPriority)
                 .field(VAR_INT, UpdateJigsawC2SPacket::getPlacementPriority));
-
         packet(UpdateSignC2SPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, UpdateSignC2SPacket::getPos)
                 .indexed(2).constant(BOOL)
                 .indexed(1).list(STRING, c -> "", p -> Lists.newArrayList(p.getText())));
-
-        // TODO: UpdateStructureBlock
-
+        packet(UpdateStructureBlockC2SPacket.class, builder -> builder
+                .compoundField(BLOCK_POS, UpdateStructureBlockC2SPacket::getPos)
+                .field(VAR_INT.xmap(Enum::ordinal), UpdateStructureBlockC2SPacket::getAction)
+                .field(VAR_INT.xmap(Enum::ordinal), UpdateStructureBlockC2SPacket::getMode)
+                .compoundField(STRING, UpdateStructureBlockC2SPacket::getTemplateName)
+                .compoundField(DataHighlightInstructionBuilder.<PacketByteBuf, BlockPos>builder()
+                        .constant(BYTE.withDescription(nil -> "x"))
+                        .constant(BYTE.withDescription(nil -> "y"))
+                        .constant(BYTE.withDescription(nil -> "z"))
+                        .build(), UpdateStructureBlockC2SPacket::getOffset)
+                .compoundField(DataHighlightInstructionBuilder.<PacketByteBuf, Vec3i>builder()
+                        .constant(BYTE.withDescription(nil -> "x"))
+                        .constant(BYTE.withDescription(nil -> "y"))
+                        .constant(BYTE.withDescription(nil -> "z"))
+                        .build(), UpdateStructureBlockC2SPacket::getSize)
+                .field(VAR_INT.xmap(Enum::ordinal), UpdateStructureBlockC2SPacket::getMirror)
+                .field(VAR_INT.xmap(Enum::ordinal), UpdateStructureBlockC2SPacket::getRotation)
+                .compoundField(STRING, UpdateStructureBlockC2SPacket::getMetadata)
+                .indexed(12).constant(FLOAT)
+                .indexed(13).field(VAR_LONG, UpdateStructureBlockC2SPacket::getSeed)
+                .indexed(9).constant(BYTE)
+                .indexed(10).sameAs(11)
+                .indexed(11).sameAs(11));
         packet(VehicleMoveC2SPacket.class, builder -> builder
                 .compoundField(VEC3D, VehicleMoveC2SPacket::position)
                 .constant(FLOAT)
@@ -586,6 +635,33 @@ public class DataHighlightInstructions {
     }
 
     private static void registerPlayS2CPackets() {
+        registry(AdvancementUpdateS2CPacket.class, builder -> builder
+                .constant(BOOL)
+                .listWithSize(ADVANCEMENT_ENTRY, AdvancementUpdateS2CPacket::getAdvancementsToEarn)
+                .listWithSize(IDENTIFIER, AdvancementUpdateS2CPacket::getAdvancementIdsToRemove)
+                .mapWithSize(IDENTIFIER, ADVANCEMENT_PROGRESS, m -> "", Either.right(buf -> {
+                    return buf.readMap(Maps::newLinkedHashMapWithExpectedSize, PacketByteBuf::readIdentifier, AdvancementProgress::fromPacket);
+                })));
+        packet(BlockBreakingProgressS2CPacket.class, builder -> builder
+                .field(VAR_INT, BlockBreakingProgressS2CPacket::getEntityId)
+                .compoundField(BLOCK_POS, BlockBreakingProgressS2CPacket::getPos)
+                .constant(BYTE));
+        registry(BlockEntityUpdateS2CPacket.class, builder -> builder
+                .compoundField(BLOCK_POS, BlockEntityUpdateS2CPacket::getPos)
+                .packetCodec(PacketCodecs.registryValue(RegistryKeys.BLOCK_ENTITY_TYPE), BlockEntityUpdateS2CPacket::getBlockEntityType)
+                .packetCodec(PacketCodecs.UNLIMITED_NBT_COMPOUND, BlockEntityUpdateS2CPacket::getNbt));
+        registry(BlockEventS2CPacket.class, builder -> builder
+                .compoundField(BLOCK_POS, BlockEventS2CPacket::getPos)
+                .constant(BYTE)
+                .constant(BYTE)
+                .packetCodec(PacketCodecs.registryValue(RegistryKeys.BLOCK), t -> I18n.translate(t.getTranslationKey()), BlockEventS2CPacket::getBlock));
+        registry(BlockUpdateS2CPacket.class, builder -> builder
+                .compoundField(BLOCK_POS, BlockUpdateS2CPacket::getPos)
+                .packetCodec(PacketCodecs.entryOf(Block.STATE_IDS), State::toString, BlockUpdateS2CPacket::getState));
+
+        // TODO: BossBar
+
+
         registry(EntitiesDestroyS2CPacket.class, builder -> builder
                 .compoundField(INT_LIST, EntitiesDestroyS2CPacket::getEntityIds));
 
@@ -620,11 +696,37 @@ public class DataHighlightInstructions {
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, GameMessageS2CPacket::content)
                 .constant(BOOL));
 
+        packet(GameStateChangeS2CPacket.class, builder -> builder
+                .constant(BYTE)
+                .constant(FLOAT));
+
+        packet(HealthUpdateS2CPacket.class, builder -> builder
+                .constant(FLOAT)
+                .field(VAR_INT, HealthUpdateS2CPacket::getFood)
+                .constant(FLOAT));
+
         registry(InventoryS2CPacket.class, builder -> builder
                 .field(VAR_INT, InventoryS2CPacket::getSyncId)
                 .field(VAR_INT, InventoryS2CPacket::getRevision)
                 .listWithSize(ITEM_STACK, InventoryS2CPacket::getContents)
                 .compoundField(ITEM_STACK, InventoryS2CPacket::getCursorStack));
+
+        packet(ItemPickupAnimationS2CPacket.class, builder -> builder
+                .field(VAR_INT, ItemPickupAnimationS2CPacket::getEntityId)
+                .field(VAR_INT, ItemPickupAnimationS2CPacket::getCollectorEntityId)
+                .field(VAR_INT, ItemPickupAnimationS2CPacket::getStackAmount));
+
+        packet(PlayerAbilitiesS2CPacket.class, builder -> builder
+                .constant(BYTE)
+                .sameAs(0)
+                .sameAs(0)
+                .sameAs(0)
+                .constant(FLOAT)
+                .constant(FLOAT));
+
+        registry(PlayerListHeaderS2CPacket.class, builder -> builder
+                .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::header)
+                .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::footer));
 
         registry(ScreenHandlerSlotUpdateS2CPacket.class, builder -> builder
                 .field(VAR_INT, ScreenHandlerSlotUpdateS2CPacket::getSyncId)
@@ -636,6 +738,15 @@ public class DataHighlightInstructions {
                 .constant(LONG)
                 .constant(LONG)
                 .constant(BOOL));
+    }
+
+    private static void registerC2SPayloads() {
+        packet(BrandCustomPayload.class, builder -> builder
+                .compoundField(STRING, s -> "Brand: " + s, BrandCustomPayload::brand));
+    }
+
+    private static void registerS2CPayloads() {
+
     }
 
     public static <B extends PacketByteBuf, T> DataHighlightInstruction<B, T> packet(Class<T> clazz, Consumer<DataHighlightInstructionBuilder<B, T>> consumer) {
