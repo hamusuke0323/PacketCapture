@@ -4,6 +4,8 @@ import java.util.List;
 
 public record Highlight<T>(HighlightRange range, T instance, String description,
                            List<Highlight<?>> sub) {
+    public static final Highlight<?> NO_HIGHLIGHT = new Highlight<>(new HighlightRange(-1, -1), null, "", List.of());
+
     public static int getWrittenByteLen(List<Highlight<?>> highlights) {
         return highlights.stream()
                 .map(Highlight::range)

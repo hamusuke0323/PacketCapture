@@ -72,14 +72,17 @@ public interface BufInstruction<B extends ByteBuf, V> {
     }
 
     /**
-     *
-     * @param curWriterIndex current reader index.
+     * @param curWriterIndex  current reader index.
      * @param receivedByteBuf if S2C packet, this param contains the received data.
-     * @param buf feel free to use this buf.
-     * @param value something value.
+     * @param buf             feel free to use this buf.
+     * @param value           something value.
      * @return List of Highlight.
      */
     List<Highlight<?>> write(int curWriterIndex, @Nullable B receivedByteBuf, B buf, V value);
+
+    default <O> BufInstruction<B, O> xmap(final Function<? super O, ? extends V> from) {
+        return (curWriterIndex, receivedByteBuf, buf, value) -> this.write(curWriterIndex, receivedByteBuf, buf, from.apply(value));
+    }
 
     default boolean shouldContinue(@Nullable B receivedByteBuf, V value) {
         return true;

@@ -20,9 +20,9 @@ public class MapInstruction<B extends ByteBuf, T, K, V, M extends Map<K, V>> ext
             List<Highlight<?>> highlights = Lists.newArrayList();
 
             var entry = DataHighlightInstructionBuilder.<B, Entry<K, V>>builder()
-                    .sub(DataHighlightInstructionBuilder.<B, K>builder()
+                    .compoundField(DataHighlightInstructionBuilder.<B, K>builder()
                             .field(keyInstruction, Function.identity()).build(), k -> "Key", Entry::getKey)
-                    .sub(DataHighlightInstructionBuilder.<B, V>builder()
+                    .compoundField(DataHighlightInstructionBuilder.<B, V>builder()
                             .field(valueInstruction, Function.identity()).build(), v -> "Value", Entry::getValue)
                     .build();
 
@@ -37,7 +37,7 @@ public class MapInstruction<B extends ByteBuf, T, K, V, M extends Map<K, V>> ext
             var counter = new AtomicInteger();
             for (var e : map.entrySet()) {
                 var mapHighlighter = DataHighlightInstructionBuilder.<B, M>builder()
-                        .sub(entry, ignored -> "Index: " + counter.getAndIncrement(), m -> e)
+                        .compoundField(entry, ignored -> "Index: " + counter.getAndIncrement(), m -> e)
                         .build();
                 var hs = mapHighlighter.write(curWriterIndex, receivedByteBuf, buf, map);
                 highlights.addAll(hs);

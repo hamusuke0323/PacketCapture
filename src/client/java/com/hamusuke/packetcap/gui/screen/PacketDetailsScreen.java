@@ -109,13 +109,18 @@ public class PacketDetailsScreen extends Screen {
         this.hexDump.render(gui, mouseX, mouseY, v);
         gui.drawCenteredTextWithShadow(this.textRenderer, DATA, this.width / 2, this.hexDump.getY() - 14, 16777215);
 
+        this.renderHighlightWhenHoveredField(gui, mouseX, mouseY);
+        this.renderHighlightWhenHoveredHex(gui, mouseX, mouseY);
+    }
+
+    private void renderHighlightWhenHoveredField(DrawContext gui, int mouseX, int mouseY) {
         if (this.packetFields.isMouseOver(mouseX, mouseY)) {
             var e = this.packetFields.hoveredElement(mouseX, mouseY);
             e.filter(guiEventListener -> guiEventListener instanceof HasClassField).ifPresent(guiEventListener -> {
                 var hasClassField = (HasClassField) guiEventListener;
                 var name = hasClassField.getField().getName();
                 var h = this.mapForHighlighting.get(name);
-                if (h == null) {
+                if (h == null || h == Highlight.NO_HIGHLIGHT) {
                     return;
                 }
 
@@ -124,27 +129,47 @@ public class PacketDetailsScreen extends Screen {
                 gui.disableScissor();
             });
         }
+    }
 
+    private void renderHighlightWhenHoveredHex(DrawContext gui, int mouseX, int mouseY) {
         var i = this.getByteIndexAt(mouseX, mouseY);
         if (i < 0) {
             return;
         }
 
+        boolean alreadyRendered = false;
+        var descriptions = new StringBuilder();
+
         for (var es : this.mapForHighlighting.entrySet()) {
             var h = es.getValue();
-            if (h.range().contains(i)) {
+            if (h == Highlight.NO_HIGHLIGHT || !h.range().contains(i)) {
+                continue;
+            }
+
+            if (!alreadyRendered) {
                 gui.enableScissor(this.hexDump.getX(), this.hexDump.getY(), this.hexDump.getScrollbarX(), this.hexDump.getBottom());
                 this.highlightHexAndCharsRecursively(gui, h, i, 0);
                 gui.disableScissor();
-                var additional = getToolTipTextRecursively(h, i, 0);
-                if (additional.endsWith("\n")) {
-                    additional = additional.substring(0, additional.length() - 1);
-                }
-
-                gui.drawTooltip(this.textRenderer, this.textRenderer.wrapLines(Text.literal(es.getKey() + (additional.isEmpty() ? "" : "\n" + additional)).styled(style -> style.withFont(PacketCapture.MONO_FONT)), Math.max(gui.getScaledWindowWidth() / 2, 200)), HoveredTooltipPositioner.INSTANCE, mouseX, mouseY);
-                break;
+                alreadyRendered = true;
             }
+
+            var additional = getToolTipTextRecursively(h, i, 0);
+            if (additional.endsWith("\n")) {
+                additional = additional.substring(0, additional.length() - 1);
+            }
+
+            descriptions
+                    .append(es.getKey())
+                    .append(additional.isEmpty() ? "" : "\n" + additional)
+                    .append("\n");
         }
+
+        var finalDesc = descriptions.toString();
+        if (finalDesc.endsWith("\n")) {
+            finalDesc = finalDesc.substring(0, finalDesc.length() - 1);
+        }
+
+        gui.drawTooltip(this.textRenderer, this.textRenderer.wrapLines(Text.literal(finalDesc).styled(style -> style.withFont(PacketCapture.MONO_FONT)), Math.max(gui.getScaledWindowWidth() / 2, 200)), HoveredTooltipPositioner.INSTANCE, mouseX, mouseY);
     }
 
     private void highlightHexAndCharsRecursively(DrawContext gui, Highlight<?> highlight, int curBytePos, int depth) {
