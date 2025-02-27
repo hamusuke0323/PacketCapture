@@ -9,6 +9,7 @@ import com.hamusuke.packetcap.gui.components.ClassFieldList;
 import com.hamusuke.packetcap.gui.components.ClassFieldList.HasClassField;
 import com.hamusuke.packetcap.highlight.Highlight;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.HoveredTooltipPositioner;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -20,6 +21,7 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Vector2i;
 
 import java.util.Map;
+import java.util.Optional;
 
 public class PacketDetailsScreen extends Screen {
     private static final Text ADD_TO_FILTER = Text.translatable(PacketCapture.MOD_ID + ".add_to_filter");
@@ -115,7 +117,15 @@ public class PacketDetailsScreen extends Screen {
 
     private void renderHighlightWhenHoveredField(DrawContext gui, int mouseX, int mouseY) {
         if (this.packetFields.isMouseOver(mouseX, mouseY)) {
-            var e = this.packetFields.hoveredElement(mouseX, mouseY);
+            Optional<Element> e = Optional.empty();
+
+            for (var c : this.packetFields.children()) {
+                if (c.isMouseOver(mouseX, mouseY)) {
+                    e = Optional.of(c);
+                    break;
+                }
+            }
+
             e.filter(guiEventListener -> guiEventListener instanceof HasClassField).ifPresent(guiEventListener -> {
                 var hasClassField = (HasClassField) guiEventListener;
                 var name = hasClassField.getField().getName();

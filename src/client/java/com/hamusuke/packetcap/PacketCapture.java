@@ -7,6 +7,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 import com.google.gson.stream.JsonWriter;
+import com.hamusuke.packetcap.clazz.visitor.ClassVisitor;
 import com.hamusuke.packetcap.filter.FilterType;
 import com.hamusuke.packetcap.filter.PacketFilter;
 import com.hamusuke.packetcap.gui.hud.PacketCaptureHud;
@@ -18,7 +19,6 @@ import com.hamusuke.packetcap.invoker.PacketCodecDispatcherAccessor;
 import fuzs.forgeconfigapiport.fabric.api.forge.v4.ForgeConfigRegistry;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.util.ReferenceCountUtil;
 import it.unimi.dsi.fastutil.Pair;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -248,6 +248,12 @@ public final class PacketCapture implements ClientModInitializer {
         }
 
         var copied = byteBuf.copy();
+        if (this.isPacketTrash(packet)) {
+            this.sentPacketNum.incrementAndGet();
+            this.sentBytes.addAndGet(copied.readableBytes());
+            copied.release();
+            return;
+        }
 
         CompletableFuture.supplyAsync(() -> {
                     int packetId = -1;
@@ -259,6 +265,8 @@ public final class PacketCapture implements ClientModInitializer {
                     return new PacketDetails(packet, copied, packetId, end, this.createHighlights(null, packet, end));
                 }, SENT_PACKET_DETAIL_RETRIEVER)
                 .whenComplete((dedicatedServerPacketDetails, throwable) -> {
+                    copied.release();
+
                     if (throwable != null) {
                         LOGGER.warn("Error occurred while creating packet details", throwable);
                     }
@@ -273,7 +281,7 @@ public final class PacketCapture implements ClientModInitializer {
         }
 
         var byteBuf = buf.copy();
-        var delivered = byteBuf.copy();
+        var delivered = buf.copy();
 
         CompletableFuture.supplyAsync(() -> {
                     int i = byteBuf.readableBytes();
@@ -283,6 +291,12 @@ public final class PacketCapture implements ClientModInitializer {
 
                     var packet = protocolInfo.codec().decode(byteBuf);
                     if (packet.getPacketType().side() == NetworkSide.SERVERBOUND || byteBuf.readableBytes() > 0) {
+                        return null;
+                    }
+
+                    if (this.isPacketTrash(packet)) {
+                        this.receivedPacketNum.incrementAndGet();
+                        this.receivedBytes.addAndGet(delivered.readableBytes());
                         return null;
                     }
 
@@ -296,7 +310,8 @@ public final class PacketCapture implements ClientModInitializer {
                     return new PacketDetails(packet, delivered, packetId, end, this.createHighlights(byteBuf, packet, end));
                 }, RECEIVED_PACKET_DETAIL_RETRIEVER)
                 .whenComplete((details, throwable) -> {
-                    ReferenceCountUtil.release(byteBuf);
+                    byteBuf.release();
+                    delivered.release();
 
                     if (throwable != null) {
                         LOGGER.warn("Error occurred while creating packet details", throwable);
@@ -306,6 +321,11 @@ public final class PacketCapture implements ClientModInitializer {
                         this.addToReceived(details);
                     }
                 });
+    }
+
+    private boolean isPacketTrash(Packet<?> packet) {
+        var clazz = ClassVisitor.getClassName(packet.getClass());
+        return this.trash(this.classNameDeobfuscater.deobfuscate(clazz));
     }
 
     public synchronized void loadFilters() {

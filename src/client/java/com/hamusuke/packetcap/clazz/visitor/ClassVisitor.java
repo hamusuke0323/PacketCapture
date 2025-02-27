@@ -38,7 +38,7 @@ public class ClassVisitor {
         return fields;
     }
 
-    private static String getClassName(Class<?> clazz) {
+    public static String getClassName(Class<?> clazz) {
         var stringBuilder = new StringBuilder();
         var enclosingClass = clazz.getEnclosingClass();
         if (enclosingClass != null) {

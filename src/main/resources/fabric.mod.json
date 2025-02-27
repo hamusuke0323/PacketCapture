@@ -7,8 +7,9 @@
 	"authors": [
 		"hamusuke2303"
 	],
+	"accessWidener": "packetcapture.accesswidener",
 	"license": "Apache-2.0",
-	"environment": "CLIENT",
+	"environment": "client",
 	"entrypoints": {
 		"client": [
 			"com.hamusuke.packetcap.PacketCapture"

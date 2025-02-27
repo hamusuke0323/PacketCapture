@@ -34,7 +34,6 @@ public class PacketDetails {
         this.hex = ImmutableList.copyOf(ByteBufUtil.prettyHexDump(data).lines().toList());
         this.size = data.readableBytes();
         this.fSize = ByteConversion.convertBytes(this.size);
-        data.release();
 
         this.packetId = packetId;
         this.packetIdEndIndex = packetIdEndIndex;

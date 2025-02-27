@@ -8,6 +8,7 @@ public record Highlight<T>(HighlightRange range, T instance, String description,
 
     public static int getWrittenByteLen(List<Highlight<?>> highlights) {
         return highlights.stream()
+                .filter(h -> h != NO_HIGHLIGHT)
                 .map(Highlight::range)
                 .mapToInt(HighlightRange::byteCount).sum();
     }

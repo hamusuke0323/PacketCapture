@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import static com.hamusuke.packetcap.highlight.Highlight.NO_HIGHLIGHT;
 import static com.hamusuke.packetcap.highlight.Highlight.getWrittenByteLen;
 import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.VAR_INT;
 
@@ -67,19 +68,18 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
             return unordered;
         }
 
-        List<Highlight<?>> highlights = new ArrayList<>(unordered);
+        Map<Integer, Highlight<?>> highlights = Maps.newTreeMap();
         for (int i = 0; i < unordered.size(); i++) {
             if (!this.highlightOrders.containsKey(i)) {
+                highlights.put(i, unordered.get(i));
                 continue;
             }
 
             int fieldIndex = this.highlightOrders.get(i);
-            var highlight = unordered.get(fieldIndex);
-            highlights.set(fieldIndex, unordered.get(i));
-            highlights.set(i, highlight);
+            highlights.put(fieldIndex, unordered.get(i));
         }
 
-        return highlights;
+        return List.copyOf(highlights.values());
     }
 
     public static class DataHighlightInstructionBuilder<B extends ByteBuf, T> {
@@ -101,12 +101,12 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
         }
 
         public DataHighlightInstructionBuilder<B, T> indexed(int fieldIndex) {
-            this.highlightOrders.put(this.instructionIndex.get(), fieldIndex);
+            this.highlightOrders.putIfAbsent(this.instructionIndex.get(), fieldIndex);
             return this;
         }
 
         public DataHighlightInstructionBuilder<B, T> notBeWritten() {
-            this.instructions.add((curWriterIndex, receivedByteBuf, buf, value) -> List.of());
+            this.instructions.add((curWriterIndex, receivedByteBuf, buf, value) -> Collections.singletonList(NO_HIGHLIGHT));
             return this;
         }
 
