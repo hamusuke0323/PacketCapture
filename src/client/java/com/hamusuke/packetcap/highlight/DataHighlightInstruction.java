@@ -132,11 +132,11 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
             return this;
         }
 
-        public <V> DataHighlightInstructionBuilder<B, T> constant(Descriptor<? super B, V> descriptor) {
-            return this.constant(descriptor.withDescription(v -> ""));
+        public <V> DataHighlightInstructionBuilder<B, T> constantSizeOf(Descriptor<? super B, V> descriptor) {
+            return this.constantSizeOf(descriptor.noDesc());
         }
 
-        public <V> DataHighlightInstructionBuilder<B, T> constant(BufInstruction<? super B, V> instruction) {
+        public <V> DataHighlightInstructionBuilder<B, T> constantSizeOf(BufInstruction<? super B, V> instruction) {
             this.instructions.add(new ConstantInstruction<>(instruction));
             return this;
         }
@@ -146,7 +146,7 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
         }
 
         public <V> DataHighlightInstructionBuilder<B, T> field(Descriptor<? super B, V> descriptor, Function<T, V> fieldGetter, Predicate<V> shouldContinue) {
-            return this.field(descriptor.withDescription(v -> ""), fieldGetter, shouldContinue);
+            return this.field(descriptor.noDesc(), fieldGetter, shouldContinue);
         }
 
         public <V> DataHighlightInstructionBuilder<B, T> field(BufInstruction<? super B, V> instruction, Function<T, V> fieldGetter) {
@@ -234,7 +234,11 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
         }
 
         public <T2> DataHighlightInstructionBuilder<B, T> compoundField(BufInstruction<? super B, T2> subInstruction, Function<T2, String> descriptor, Function<T, T2> fieldGetter) {
-            this.instructions.add(new RecursiveInstruction<>(subInstruction, descriptor, Either.left(fieldGetter)));
+            return this.compoundField(subInstruction, descriptor, fieldGetter, null);
+        }
+
+        public <T2> DataHighlightInstructionBuilder<B, T> compoundField(BufInstruction<? super B, T2> subInstruction, Function<T2, String> descriptor, Function<T, T2> fieldGetter, Predicate<T2> shouldContinue) {
+            this.instructions.add(new RecursiveInstruction<>(subInstruction, descriptor, Either.left(fieldGetter), shouldContinue));
             return this;
         }
 

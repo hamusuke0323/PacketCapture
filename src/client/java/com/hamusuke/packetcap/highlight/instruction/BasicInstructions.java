@@ -20,6 +20,7 @@ public class BasicInstructions {
     public static final Descriptor<ByteBuf, Double> DOUBLE = o -> constant(8, o);
     public static final Descriptor<ByteBuf, Integer> INT = o -> constant(4, o);
     public static final Descriptor<ByteBuf, Long> LONG = o -> constant(8, o);
+    public static final Descriptor<ByteBuf, long[]> LONG_ARRAY = o -> valueOnly(longs -> longs.length * 8, o);
     public static final Descriptor<ByteBuf, byte[]> BYTE_ARRAY = o -> valueOnly(bytes -> bytes.length, o);
     public static final Descriptor<ByteBuf, ByteBuf> BYTE_BUF = o -> valueOnly(ByteBuf::readableBytes, o);
     public static final Descriptor<ByteBuf, ByteBuffer> BYTE_BUFFER = o -> valueOnly(Buffer::remaining, o);
@@ -34,8 +35,12 @@ public class BasicInstructions {
     public interface Descriptor<B extends ByteBuf, T> {
         BufInstruction<B, T> withDescription(Function<T, String> descriptor);
 
+        default BufInstruction<B, T> noDesc() {
+            return this.withDescription(t -> "");
+        }
+
         default <O> BufInstruction<B, O> xmap(final Function<? super O, ? extends T> from) {
-            return this.withDescription(t -> "").xmap(from);
+            return this.noDesc().xmap(from);
         }
     }
 }

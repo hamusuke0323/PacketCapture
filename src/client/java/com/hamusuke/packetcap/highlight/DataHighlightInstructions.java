@@ -29,7 +29,11 @@ import net.minecraft.client.resource.language.I18n;
 import net.minecraft.component.ComponentChanges;
 import net.minecraft.component.MergedComponentMap;
 import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.entity.attribute.EntityAttribute;
+import net.minecraft.entity.attribute.EntityAttributeModifier;
+import net.minecraft.entity.damage.DamageType;
 import net.minecraft.entity.effect.StatusEffect;
+import net.minecraft.entity.player.PlayerPosition;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.RegistryByteBuf;
@@ -65,9 +69,11 @@ import net.minecraft.network.packet.s2c.login.LoginHelloS2CPacket;
 import net.minecraft.network.packet.s2c.login.LoginQueryRequestPayload;
 import net.minecraft.network.packet.s2c.login.LoginQueryRequestS2CPacket;
 import net.minecraft.network.packet.s2c.play.*;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.particle.ParticlesMode;
 import net.minecraft.recipe.NetworkRecipeId;
 import net.minecraft.recipe.book.RecipeBookType;
+import net.minecraft.recipe.display.RecipeDisplay;
 import net.minecraft.registry.DynamicRegistryManager;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
@@ -76,6 +82,7 @@ import net.minecraft.registry.VersionedIdentifier;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.TagPacketSerializer.Serialized;
 import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.state.State;
 import net.minecraft.text.Text.Serialization;
 import net.minecraft.text.TextCodecs;
@@ -97,6 +104,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.*;
+import static com.hamusuke.packetcap.highlight.instruction.BufInstruction.writeAndGuess;
 
 public class DataHighlightInstructions {
     private static final Map<Class<?>, DataHighlightInstruction<? extends ByteBuf, ?>> HIGHLIGHTERS = Maps.newHashMap();
@@ -144,6 +152,14 @@ public class DataHighlightInstructions {
     public static final DataHighlightInstruction<ByteBuf, byte[]> BYTE_ARRAY_WITH_LEN = register(byte[].class, builder -> builder
             .field(VAR_INT.withDescription(length -> "Byte Array Length: " + length), bytes -> bytes.length)
             .field(BYTE_ARRAY.withDescription(bytes -> "Data"), Function.identity()));
+
+    public static final DataHighlightInstruction<ByteBuf, long[]> LONG_ARRAY_WITH_LEN = register(long[].class, builder -> builder
+            .field(VAR_INT.withDescription(length -> "Long Array Length: " + length), longs -> longs.length)
+            .field(LONG_ARRAY.withDescription(longs -> "Data"), Function.identity()));
+
+    public static final DataHighlightInstruction<ByteBuf, int[]> INT_ARRAY_WITH_LEN = register(int[].class, builder -> builder
+            .field(VAR_INT.withDescription(length -> "Integer Array Length: " + length), ints -> ints.length)
+            .list(VAR_INT.noDesc(), c -> "Integers", ints -> Arrays.stream(ints).boxed().toList()));
 
     public static final DataHighlightInstruction<RegistryByteBuf, ItemStack> ITEM_STACK = register(ItemStack.class, builder -> builder
             .field(VAR_INT.withDescription(count -> count <= 0 ? "Empty" : "Count: " + count), ItemStack::getCount, count -> count > 0)
@@ -198,7 +214,7 @@ public class DataHighlightInstructions {
             .field(VAR_INT.withDescription(o -> "Particle Status: " + ParticlesMode.values()[o]), p -> p.particleStatus().ordinal()));
 
     public static final DataHighlightInstruction<ByteBuf, Instant> INSTANT = register(Instant.class, builder -> builder
-            .constant(LONG));
+            .constantSizeOf(LONG));
 
     public static final Function<Integer, DataHighlightInstruction<PacketByteBuf, BitSet>> SIZED_BIT_SET = size -> make(builder -> builder
             .packetEncoder((buf, value) -> buf.writeBitSet(value, size), Function.identity()));
@@ -227,9 +243,9 @@ public class DataHighlightInstructions {
     public static final DataHighlightInstruction<ByteBuf, BlockHitResult> BLOCK_HIT_RESULT = register(BlockHitResult.class, builder -> builder
             .field(BLOCK_POS, BlockHitResult::getBlockPos)
             .field(VAR_INT.withDescription(o -> "Side: " + Direction.values()[o]).xmap(Direction::ordinal), BlockHitResult::getSide)
-            .constant(FLOAT)
-            .constant(FLOAT)
-            .constant(FLOAT)
+            .constantSizeOf(FLOAT)
+            .constantSizeOf(FLOAT)
+            .constantSizeOf(FLOAT)
             .field(BOOL.withDescription(prefixed("Is Inside Block")), BlockHitResult::isInsideBlock)
             .field(BOOL.withDescription(prefixed("Is Against World Border")), BlockHitResult::isAgainstWorldBorder));
 
@@ -309,6 +325,33 @@ public class DataHighlightInstructions {
             .compoundField(IDENTIFIER, id -> "ID: " + id, AdvancementEntry::id)
             .compoundField(ADVANCEMENT, a -> "Advancement", AdvancementEntry::value));
 
+    public static final DataHighlightInstruction<ByteBuf, ChunkPos> CHUNK_POS = register(ChunkPos.class, builder -> builder
+            .field(LONG.withDescription(l -> new ChunkPos(l).toString()), ChunkPos::toLong));
+
+    public static final DataHighlightInstruction<PacketByteBuf, ChunkBiomeDataS2CPacket.Serialized> CBD_SERIALIZED = packet(ChunkBiomeDataS2CPacket.Serialized.class, builder -> builder
+            .compoundField(CHUNK_POS, p -> "Chunk Pos", ChunkBiomeDataS2CPacket.Serialized::pos)
+            .compoundField(BYTE_ARRAY_WITH_LEN, b -> "Chunk Sections", ChunkBiomeDataS2CPacket.Serialized::buffer));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, CommandSuggestionsS2CPacket.Suggestion> COMMAND_SUGGESTION = registry(CommandSuggestionsS2CPacket.Suggestion.class, builder -> builder
+            .compoundField(STRING, s -> "Text", CommandSuggestionsS2CPacket.Suggestion::text)
+            .compoundField(optional(t -> "Tooltip", TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC), CommandSuggestionsS2CPacket.Suggestion::tooltip));
+
+    public static final DataHighlightInstruction<ByteBuf, EntityAttributeModifier> ATTRIBUTE_MODIFIER = register(EntityAttributeModifier.class, builder -> builder
+            .compoundField(IDENTIFIER, id -> "ID: " + id, EntityAttributeModifier::id)
+            .constantSizeOf(DOUBLE.withDescription(nil -> "Value"))
+            .field(VAR_INT.withDescription(o -> "Operation").xmap(EntityAttributeModifier.Operation::getId), EntityAttributeModifier::operation));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, EntityAttributesS2CPacket.Entry> ATTRIBUTE_ENTRY = registry(EntityAttributesS2CPacket.Entry.class, builder -> builder
+            .packetCodec(EntityAttribute.PACKET_CODEC, t -> "Attribute: " + t.getIdAsString(), EntityAttributesS2CPacket.Entry::attribute)
+            .constantSizeOf(DOUBLE.withDescription(nil -> "Base value"))
+            .listWithSize(ATTRIBUTE_MODIFIER, c -> "Attribute Modifiers", EntityAttributesS2CPacket.Entry::modifiers));
+
+    public static final DataHighlightInstruction<PacketByteBuf, PlayerPosition> PLAYER_POSITION = packet(PlayerPosition.class, builder -> builder
+            .compoundField(VEC3D, p -> "Position", PlayerPosition::position)
+            .compoundField(VEC3D, p -> "Delta Movement", PlayerPosition::deltaMovement)
+            .constantSizeOf(FLOAT.withDescription(nil -> "Yaw"))
+            .constantSizeOf(FLOAT.withDescription(nil -> "Pitch")));
+
     static {
         // HANDSHAKE
         registerHandshakePackets();
@@ -378,7 +421,7 @@ public class DataHighlightInstructions {
                         .compoundField(IDENTIFIER, id -> "Payload ID: " + id.toString(), payload -> payload.getId().id())
                         .compoundField(new ServerboundPayloadInstruction<>(), p -> "Payload Data", Function.identity()).build(), CustomPayloadC2SPacket::payload));
         packet(ResourcePackStatusC2SPacket.class, builder -> builder
-                .constant(UUID)
+                .constantSizeOf(UUID)
                 .field(VAR_INT, p -> p.status().ordinal()));
     }
 
@@ -394,13 +437,13 @@ public class DataHighlightInstructions {
                     return buf.readMap(Maps::newLinkedHashMapWithExpectedSize, PacketCodecs.string(128), PacketCodecs.string(4096));
                 })));
         packet(ResourcePackRemoveS2CPacket.class, builder -> builder
-                .compoundField(optional(t -> "", (buf, value) -> buf.writeUuid(value)), ResourcePackRemoveS2CPacket::id));
+                .compoundField(optional(UUID.noDesc()), ResourcePackRemoveS2CPacket::id));
         packet(ResourcePackSendS2CPacket.class, builder -> builder
                 .field(UUID, ResourcePackSendS2CPacket::id)
                 .compoundField(STRING, ResourcePackSendS2CPacket::url)
                 .compoundField(STRING, ResourcePackSendS2CPacket::hash)
                 .field(BOOL, ResourcePackSendS2CPacket::required)
-                .compoundField(optional(t -> "", TextCodecs.PACKET_CODEC), ResourcePackSendS2CPacket::prompt));
+                .compoundField(optional(TextCodecs.PACKET_CODEC), ResourcePackSendS2CPacket::prompt));
         packet(ServerTransferS2CPacket.class, builder -> builder
                 .compoundField(STRING, ServerTransferS2CPacket::host)
                 .field(VAR_INT, ServerTransferS2CPacket::port));
@@ -435,12 +478,12 @@ public class DataHighlightInstructions {
                 .field(VAR_INT.withDescription(o -> "Action: " + Action.values()[o]), p -> p.getAction().ordinal(), o -> Action.values()[o] == Action.OPENED_TAB)
                 .compoundField(IDENTIFIER, AdvancementTabC2SPacket::getTabToOpen));
         packet(BoatPaddleStateC2SPacket.class, builder -> builder
-                .constant(BOOL)
-                .constant(BOOL));
+                .constantSizeOf(BOOL)
+                .constantSizeOf(BOOL));
         packet(BookUpdateC2SPacket.class, builder -> builder
                 .field(VAR_INT, BookUpdateC2SPacket::slot)
                 .listWithSize(STRING, BookUpdateC2SPacket::pages)
-                .compoundField(optional(s -> "", STRING), BookUpdateC2SPacket::title));
+                .compoundField(optional(STRING), BookUpdateC2SPacket::title));
         packet(BundleItemSelectedC2SPacket.class, builder -> builder
                 .field(VAR_INT, BundleItemSelectedC2SPacket::slotId)
                 .field(VAR_INT, BundleItemSelectedC2SPacket::selectedItemIndex));
@@ -450,24 +493,23 @@ public class DataHighlightInstructions {
         packet(ChatCommandSignedC2SPacket.class, builder -> builder
                 .compoundField(STRING, ChatCommandSignedC2SPacket::command)
                 .field(INSTANT, ChatCommandSignedC2SPacket::timestamp)
-                .constant(LONG)
+                .constantSizeOf(LONG)
                 .compoundField(ARGUMENT_SIGNATURE_DATA_MAP, ChatCommandSignedC2SPacket::argumentSignatures)
                 .compoundField(LSM_ACK, ChatCommandSignedC2SPacket::lastSeenMessages));
         packet(ChatMessageC2SPacket.class, builder -> builder
                 .compoundField(STRING, ChatMessageC2SPacket::chatMessage)
                 .field(INSTANT, ChatMessageC2SPacket::timestamp)
-                .constant(LONG)
+                .constantSizeOf(LONG)
                 .compoundField(nullable(d -> "", MESSAGE_SIGNATURE_DATA), ChatMessageC2SPacket::signature)
                 .compoundField(LSM_ACK, ChatMessageC2SPacket::acknowledgment));
         registry(ClickSlotC2SPacket.class, builder -> builder
                 .field(VAR_INT, ClickSlotC2SPacket::getSyncId)
                 .field(VAR_INT, ClickSlotC2SPacket::getRevision)
-                .constant(SHORT)
-                .constant(BYTE)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(BYTE)
                 .field(VAR_INT.withDescription(o -> "Slot Action Type: " + SlotActionType.values()[o]), p -> p.getActionType().ordinal())
                 .indexed(6).mapWithSize(
-                        SHORT.withDescription(s -> "")
-                                .xmap(Integer::shortValue), ITEM_STACK,
+                        SHORT.noDesc().xmap(Integer::shortValue), ITEM_STACK,
                         m -> "",
                         Either.left(ClickSlotC2SPacket::getModifiedStacks))
                 .indexed(5).compoundField(ITEM_STACK, ClickSlotC2SPacket::getStack));
@@ -482,7 +524,7 @@ public class DataHighlightInstructions {
                 .field(NETWORK_RECIPE_ID, CraftRequestC2SPacket::recipeId)
                 .field(BOOL, CraftRequestC2SPacket::craftAll));
         registry(CreativeInventoryActionC2SPacket.class, builder -> builder
-                .constant(SHORT)
+                .constantSizeOf(SHORT)
                 .compoundField(ITEM_STACK, CreativeInventoryActionC2SPacket::stack));
         packet(JigsawGeneratingC2SPacket.class, builder -> builder
                 .field(BLOCK_POS, JigsawGeneratingC2SPacket::getPos)
@@ -506,29 +548,29 @@ public class DataHighlightInstructions {
         packet(PlayerInteractEntityC2SPacket.class, builder -> builder
                 .field(VAR_INT, p -> p.entityId)
                 .compoundField(INTERACT_TYPE_HANDLER, p -> p.type)
-                .constant(BOOL));
+                .constantSizeOf(BOOL));
         packet(PlayerInteractItemC2SPacket.class, builder -> builder
                 .field(VAR_INT, p -> p.getHand().ordinal())
                 .field(VAR_INT, PlayerInteractItemC2SPacket::getSequence)
                 .field(FLOAT, PlayerInteractItemC2SPacket::getYaw)
                 .field(FLOAT, PlayerInteractItemC2SPacket::getPitch));
         packet(PlayerMoveC2SPacket.Full.class, builder -> builder
-                .constant(DOUBLE)
-                .constant(DOUBLE)
-                .constant(DOUBLE)
-                .constant(FLOAT)
-                .constant(FLOAT)
-                .constant(BYTE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(BYTE)
                 .sameAs(5)
                 .notBeWritten()
                 .notBeWritten());
         packet(PlayerMoveC2SPacket.PositionAndOnGround.class, builder -> builder
-                .constant(DOUBLE)
-                .constant(DOUBLE)
-                .constant(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
                 .notBeWritten()
                 .notBeWritten()
-                .constant(BYTE)
+                .constantSizeOf(BYTE)
                 .sameAs(5)
                 .notBeWritten()
                 .notBeWritten());
@@ -536,9 +578,9 @@ public class DataHighlightInstructions {
                 .notBeWritten()
                 .notBeWritten()
                 .notBeWritten()
-                .constant(FLOAT)
-                .constant(FLOAT)
-                .constant(BYTE)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(BYTE)
                 .sameAs(5)
                 .notBeWritten()
                 .notBeWritten());
@@ -548,7 +590,7 @@ public class DataHighlightInstructions {
                 .notBeWritten()
                 .notBeWritten()
                 .notBeWritten()
-                .constant(BYTE)
+                .constantSizeOf(BYTE)
                 .sameAs(5)
                 .notBeWritten()
                 .notBeWritten());
@@ -562,15 +604,15 @@ public class DataHighlightInstructions {
                 .field(VAR_INT, QueryEntityNbtC2SPacket::getEntityId));
         packet(RecipeCategoryOptionsC2SPacket.class, builder -> builder
                 .field(VAR_INT.withDescription(o -> "Recipe Book Type: " + RecipeBookType.values()[o]).xmap(Enum::ordinal), RecipeCategoryOptionsC2SPacket::getCategory)
-                .constant(BOOL)
-                .constant(BOOL));
+                .constantSizeOf(BOOL)
+                .constantSizeOf(BOOL));
         packet(RequestCommandCompletionsC2SPacket.class, builder -> builder
                 .field(VAR_INT, RequestCommandCompletionsC2SPacket::getCompletionId)
                 .compoundField(STRING, RequestCommandCompletionsC2SPacket::getPartialCommand));
         packet(SlotChangedStateC2SPacket.class, builder -> builder
                 .field(VAR_INT, SlotChangedStateC2SPacket::slotId)
                 .field(VAR_INT, SlotChangedStateC2SPacket::screenHandlerId)
-                .constant(BOOL));
+                .constantSizeOf(BOOL));
         registry(UpdateBeaconC2SPacket.class, builder -> builder
                 .compoundField(
                         optional(t -> "Status Effect: " + t.getIdAsString(), DataHighlightInstructionBuilder.<RegistryByteBuf, RegistryEntry<StatusEffect>>builder()
@@ -582,13 +624,13 @@ public class DataHighlightInstructions {
                 .compoundField(BLOCK_POS, UpdateCommandBlockC2SPacket::getPos)
                 .compoundField(STRING, UpdateCommandBlockC2SPacket::getCommand)
                 .indexed(5).field(VAR_INT.withDescription(o -> "Type: " + CommandBlockBlockEntity.Type.values()[o]).xmap(Enum::ordinal), UpdateCommandBlockC2SPacket::getType)
-                .indexed(2).constant(BYTE)
+                .indexed(2).constantSizeOf(BYTE)
                 .indexed(3).sameAs(3)
                 .indexed(4).sameAs(3));
         packet(UpdateCommandBlockMinecartC2SPacket.class, builder -> builder
                 .field(VAR_INT, p -> p.entityId)
                 .compoundField(STRING, UpdateCommandBlockMinecartC2SPacket::getCommand)
-                .constant(BOOL));
+                .constantSizeOf(BOOL));
         packet(UpdateDifficultyC2SPacket.class, builder -> builder
                 .field(BYTE.withDescription(o -> "Difficulty: " + Difficulty.byId(o)).xmap(Integer::byteValue).xmap(Difficulty::getId), UpdateDifficultyC2SPacket::getDifficulty));
         packet(UpdateJigsawC2SPacket.class, builder -> builder
@@ -602,7 +644,7 @@ public class DataHighlightInstructions {
                 .field(VAR_INT, UpdateJigsawC2SPacket::getPlacementPriority));
         packet(UpdateSignC2SPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, UpdateSignC2SPacket::getPos)
-                .indexed(2).constant(BOOL)
+                .indexed(2).constantSizeOf(BOOL)
                 .indexed(1).list(STRING, c -> "", p -> Lists.newArrayList(p.getText())));
         packet(UpdateStructureBlockC2SPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, UpdateStructureBlockC2SPacket::getPos)
@@ -610,33 +652,33 @@ public class DataHighlightInstructions {
                 .field(VAR_INT.xmap(Enum::ordinal), UpdateStructureBlockC2SPacket::getMode)
                 .compoundField(STRING, UpdateStructureBlockC2SPacket::getTemplateName)
                 .compoundField(DataHighlightInstructionBuilder.<PacketByteBuf, BlockPos>builder()
-                        .constant(BYTE.withDescription(nil -> "x"))
-                        .constant(BYTE.withDescription(nil -> "y"))
-                        .constant(BYTE.withDescription(nil -> "z"))
+                        .constantSizeOf(BYTE.withDescription(nil -> "x"))
+                        .constantSizeOf(BYTE.withDescription(nil -> "y"))
+                        .constantSizeOf(BYTE.withDescription(nil -> "z"))
                         .build(), UpdateStructureBlockC2SPacket::getOffset)
                 .compoundField(DataHighlightInstructionBuilder.<PacketByteBuf, Vec3i>builder()
-                        .constant(BYTE.withDescription(nil -> "x"))
-                        .constant(BYTE.withDescription(nil -> "y"))
-                        .constant(BYTE.withDescription(nil -> "z"))
+                        .constantSizeOf(BYTE.withDescription(nil -> "x"))
+                        .constantSizeOf(BYTE.withDescription(nil -> "y"))
+                        .constantSizeOf(BYTE.withDescription(nil -> "z"))
                         .build(), UpdateStructureBlockC2SPacket::getSize)
                 .field(VAR_INT.xmap(Enum::ordinal), UpdateStructureBlockC2SPacket::getMirror)
                 .field(VAR_INT.xmap(Enum::ordinal), UpdateStructureBlockC2SPacket::getRotation)
                 .compoundField(STRING, UpdateStructureBlockC2SPacket::getMetadata)
-                .indexed(12).constant(FLOAT)
+                .indexed(12).constantSizeOf(FLOAT)
                 .indexed(13).field(VAR_LONG, UpdateStructureBlockC2SPacket::getSeed)
-                .indexed(9).constant(BYTE)
+                .indexed(9).constantSizeOf(BYTE)
                 .indexed(10).sameAs(11)
                 .indexed(11).sameAs(11));
         packet(VehicleMoveC2SPacket.class, builder -> builder
                 .compoundField(VEC3D, VehicleMoveC2SPacket::position)
-                .constant(FLOAT)
-                .constant(FLOAT)
-                .constant(BOOL));
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(BOOL));
     }
 
     private static void registerPlayS2CPackets() {
         registry(AdvancementUpdateS2CPacket.class, builder -> builder
-                .constant(BOOL)
+                .constantSizeOf(BOOL)
                 .listWithSize(ADVANCEMENT_ENTRY, AdvancementUpdateS2CPacket::getAdvancementsToEarn)
                 .listWithSize(IDENTIFIER, AdvancementUpdateS2CPacket::getAdvancementIdsToRemove)
                 .mapWithSize(IDENTIFIER, ADVANCEMENT_PROGRESS, m -> "", Either.right(buf -> {
@@ -645,25 +687,95 @@ public class DataHighlightInstructions {
         packet(BlockBreakingProgressS2CPacket.class, builder -> builder
                 .field(VAR_INT, BlockBreakingProgressS2CPacket::getEntityId)
                 .compoundField(BLOCK_POS, BlockBreakingProgressS2CPacket::getPos)
-                .constant(BYTE));
+                .constantSizeOf(BYTE));
         registry(BlockEntityUpdateS2CPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, BlockEntityUpdateS2CPacket::getPos)
                 .packetCodec(PacketCodecs.registryValue(RegistryKeys.BLOCK_ENTITY_TYPE), BlockEntityUpdateS2CPacket::getBlockEntityType)
                 .packetCodec(PacketCodecs.UNLIMITED_NBT_COMPOUND, BlockEntityUpdateS2CPacket::getNbt));
         registry(BlockEventS2CPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, BlockEventS2CPacket::getPos)
-                .constant(BYTE)
-                .constant(BYTE)
+                .constantSizeOf(BYTE)
+                .constantSizeOf(BYTE)
                 .packetCodec(PacketCodecs.registryValue(RegistryKeys.BLOCK), t -> I18n.translate(t.getTranslationKey()), BlockEventS2CPacket::getBlock));
         registry(BlockUpdateS2CPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, BlockUpdateS2CPacket::getPos)
                 .packetCodec(PacketCodecs.entryOf(Block.STATE_IDS), State::toString, BlockUpdateS2CPacket::getState));
 
         // TODO: BossBar
+        // TODO: ChatMessage
 
+        packet(ChatSuggestionsS2CPacket.class, builder -> builder
+                .field(VAR_INT.xmap(Enum::ordinal), ChatSuggestionsS2CPacket::action)
+                .listWithSize(STRING, ChatSuggestionsS2CPacket::entries));
+
+        packet(ChunkBiomeDataS2CPacket.class, builder -> builder
+                .listWithSize(CBD_SERIALIZED, ChunkBiomeDataS2CPacket::chunkBiomeData));
+
+        // TODO: ChunkData
+        // TODO: ChunkDeltaUpdate
+
+        packet(ChunkRenderDistanceCenterS2CPacket.class, builder -> builder
+                .field(VAR_INT, ChunkRenderDistanceCenterS2CPacket::getChunkX)
+                .field(VAR_INT, ChunkRenderDistanceCenterS2CPacket::getChunkZ));
+
+
+        registry(CommandSuggestionsS2CPacket.class, builder -> builder
+                .field(VAR_INT, CommandSuggestionsS2CPacket::id)
+                .field(VAR_INT, CommandSuggestionsS2CPacket::start)
+                .field(VAR_INT, CommandSuggestionsS2CPacket::length)
+                .listWithSize(COMMAND_SUGGESTION, CommandSuggestionsS2CPacket::suggestions));
+
+        // TODO: CommandTree
+
+        registry(CooldownUpdateS2CPacket.class, builder -> builder
+                .compoundField(IDENTIFIER, CooldownUpdateS2CPacket::cooldownGroup)
+                .field(VAR_INT, CooldownUpdateS2CPacket::cooldown));
+
+        registry(CraftFailedResponseS2CPacket.class, builder -> builder
+                .field(VAR_INT, CraftFailedResponseS2CPacket::syncId)
+                .packetCodec(RecipeDisplay.STREAM_CODEC, CraftFailedResponseS2CPacket::recipeDisplay));
+
+        packet(DamageTiltS2CPacket.class, builder -> builder
+                .field(VAR_INT, DamageTiltS2CPacket::id)
+                .constantSizeOf(FLOAT));
+
+        registry(DeathMessageS2CPacket.class, builder -> builder
+                .field(VAR_INT, DeathMessageS2CPacket::playerId)
+                .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, DeathMessageS2CPacket::message));
+
+        packet(DebugSampleS2CPacket.class, builder -> builder
+                .compoundField(LONG_ARRAY_WITH_LEN, DebugSampleS2CPacket::sample)
+                .field(VAR_INT.xmap(Enum::ordinal), DebugSampleS2CPacket::debugSampleType));
+
+        packet(DifficultyS2CPacket.class, builder -> builder
+                .field(BYTE
+                                .withDescription(id -> Difficulty.byId(id).getName())
+                                .xmap(Integer::byteValue)
+                                .xmap(Difficulty::getId),
+                        DifficultyS2CPacket::getDifficulty)
+                .constantSizeOf(BOOL));
 
         registry(EntitiesDestroyS2CPacket.class, builder -> builder
                 .compoundField(INT_LIST, EntitiesDestroyS2CPacket::getEntityIds));
+
+        packet(EntityAnimationS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityAnimationS2CPacket::getEntityId)
+                .constantSizeOf(BYTE));
+
+        packet(EntityAttachS2CPacket.class, builder -> builder
+                .constantSizeOf(INT)
+                .constantSizeOf(INT));
+
+        registry(EntityAttributesS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityAttributesS2CPacket::getEntityId)
+                .listWithSize(ATTRIBUTE_ENTRY, EntityAttributesS2CPacket::getEntries));
+
+        registry(EntityDamageS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityDamageS2CPacket::entityId)
+                .packetCodec(DamageType.ENTRY_PACKET_CODEC, EntityDamageS2CPacket::sourceType)
+                .field(VAR_INT, p -> p.sourceCauseId() + 1)
+                .field(VAR_INT, p -> p.sourceDirectId() + 1)
+                .compoundField(optional(VEC3D), EntityDamageS2CPacket::sourcePosition));
 
         registry(EntityEquipmentUpdateS2CPacket.class, builder -> builder
                 .field(VAR_INT, EntityEquipmentUpdateS2CPacket::getEntityId)
@@ -677,33 +789,135 @@ public class DataHighlightInstructions {
                         }).xmap(Integer::byteValue).xmap(Enum::ordinal), Pair::getFirst)
                         .compoundField(ITEM_STACK, i -> "Item Stack", Pair::getSecond).build(), c -> "", EntityEquipmentUpdateS2CPacket::getEquipmentList));
 
+        packet(EntityPassengersSetS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityPassengersSetS2CPacket::getEntityId)
+                .compoundField(INT_ARRAY_WITH_LEN, EntityPassengersSetS2CPacket::getPassengerIds));
+
+        packet(EntityPositionS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityPositionS2CPacket::entityId)
+                .compoundField(PLAYER_POSITION, EntityPositionS2CPacket::change)
+                .packetCodec(PositionFlag.PACKET_CODEC, EntityPositionS2CPacket::relatives)
+                .constantSizeOf(BOOL));
+
+        packet(EntityPositionSyncS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityPositionSyncS2CPacket::id)
+                .compoundField(PLAYER_POSITION, EntityPositionSyncS2CPacket::values)
+                .constantSizeOf(BOOL));
+
+        packet(EntityS2CPacket.RotateAndMoveRelative.class, builder -> builder
+                .field(VAR_INT, p -> p.id)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(BYTE)
+                .constantSizeOf(BYTE)
+                .constantSizeOf(BOOL)
+                .notBeWritten()
+                .notBeWritten());
+
+        packet(EntityS2CPacket.MoveRelative.class, builder -> builder
+                .field(VAR_INT, p -> p.id)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(SHORT)
+                .notBeWritten()
+                .notBeWritten()
+                .constantSizeOf(BOOL)
+                .notBeWritten()
+                .notBeWritten());
+
+        packet(EntityS2CPacket.Rotate.class, builder -> builder
+                .field(VAR_INT, p -> p.id)
+                .notBeWritten()
+                .notBeWritten()
+                .notBeWritten()
+                .constantSizeOf(BYTE)
+                .constantSizeOf(BYTE)
+                .constantSizeOf(BOOL)
+                .notBeWritten()
+                .notBeWritten());
+
+        packet(EntitySetHeadYawS2CPacket.class, builder -> builder
+                .field(VAR_INT, p -> p.entityId)
+                .constantSizeOf(BYTE));
+
+        registry(EntitySpawnS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntitySpawnS2CPacket::getEntityId)
+                .field(UUID, EntitySpawnS2CPacket::getUuid)
+                .packetCodec(PacketCodecs.registryValue(RegistryKeys.ENTITY_TYPE), EntitySpawnS2CPacket::getEntityType)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .indexed(9).constantSizeOf(BYTE)
+                .indexed(10).constantSizeOf(BYTE)
+                .indexed(11).constantSizeOf(BYTE)
+                .indexed(12).field(VAR_INT, EntitySpawnS2CPacket::getEntityData)
+                .indexed(6).constantSizeOf(SHORT)
+                .indexed(7).constantSizeOf(SHORT)
+                .indexed(8).constantSizeOf(SHORT));
+
+        // TODO: EntityStatusEffect
+
+        packet(EntityStatusS2CPacket.class, builder -> builder
+                .constantSizeOf(INT)
+                .constantSizeOf(BYTE));
+
+        registry(EntityTrackerUpdateS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityTrackerUpdateS2CPacket::id)
+                .list(writeAndGuess((registryByteBuf, serializedEntry) -> serializedEntry.write(registryByteBuf), v -> ""), c -> "", EntityTrackerUpdateS2CPacket::trackedValues)
+                .constantSizeOf(BYTE));
+
+        packet(EntityVelocityUpdateS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityVelocityUpdateS2CPacket::getEntityId)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(SHORT));
+
+        packet(ExperienceBarUpdateS2CPacket.class, builder -> builder
+                .constantSizeOf(FLOAT)
+                .indexed(2).field(VAR_INT, ExperienceBarUpdateS2CPacket::getExperience)
+                .indexed(1).field(VAR_INT, ExperienceBarUpdateS2CPacket::getExperienceLevel));
+
+        packet(ExperienceOrbSpawnS2CPacket.class, builder -> builder
+                .field(VAR_INT, ExperienceOrbSpawnS2CPacket::getEntityId)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(SHORT));
+
+        registry(ExplosionS2CPacket.class, builder -> builder
+                .compoundField(VEC3D, ExplosionS2CPacket::center)
+                .compoundField(optional(VEC3D), ExplosionS2CPacket::playerKnockback)
+                .packetCodec(ParticleTypes.PACKET_CODEC, ExplosionS2CPacket::explosionParticle)
+                .packetCodec(SoundEvent.ENTRY_PACKET_CODEC, RegistryEntry::getIdAsString, ExplosionS2CPacket::explosionSound));
+
         registry(GameJoinS2CPacket.class, builder -> builder
-                .constant(INT)
-                .constant(BOOL)
+                .constantSizeOf(INT)
+                .constantSizeOf(BOOL)
                 .listWithSize(REGISTRY_KEY, c -> "", Either.right(buf -> {
                     return buf.readCollection(Lists::newArrayListWithExpectedSize, (b) -> b.readRegistryKey(RegistryKeys.WORLD));
                 }))
                 .field(VAR_INT, GameJoinS2CPacket::maxPlayers)
                 .field(VAR_INT, GameJoinS2CPacket::viewDistance)
                 .field(VAR_INT, GameJoinS2CPacket::simulationDistance)
-                .constant(BOOL)
-                .constant(BOOL)
-                .constant(BOOL)
+                .constantSizeOf(BOOL)
+                .constantSizeOf(BOOL)
+                .constantSizeOf(BOOL)
                 .compoundField(COMMON_PLAYER_SPAWN_INFO, GameJoinS2CPacket::commonPlayerSpawnInfo)
-                .constant(BOOL));
+                .constantSizeOf(BOOL));
 
         registry(GameMessageS2CPacket.class, builder -> builder
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, GameMessageS2CPacket::content)
-                .constant(BOOL));
+                .constantSizeOf(BOOL));
 
         packet(GameStateChangeS2CPacket.class, builder -> builder
-                .constant(BYTE)
-                .constant(FLOAT));
+                .constantSizeOf(BYTE)
+                .constantSizeOf(FLOAT));
 
         packet(HealthUpdateS2CPacket.class, builder -> builder
-                .constant(FLOAT)
+                .constantSizeOf(FLOAT)
                 .field(VAR_INT, HealthUpdateS2CPacket::getFood)
-                .constant(FLOAT));
+                .constantSizeOf(FLOAT));
 
         registry(InventoryS2CPacket.class, builder -> builder
                 .field(VAR_INT, InventoryS2CPacket::getSyncId)
@@ -716,13 +930,14 @@ public class DataHighlightInstructions {
                 .field(VAR_INT, ItemPickupAnimationS2CPacket::getCollectorEntityId)
                 .field(VAR_INT, ItemPickupAnimationS2CPacket::getStackAmount));
 
+
         packet(PlayerAbilitiesS2CPacket.class, builder -> builder
-                .constant(BYTE)
+                .constantSizeOf(BYTE)
                 .sameAs(0)
                 .sameAs(0)
                 .sameAs(0)
-                .constant(FLOAT)
-                .constant(FLOAT));
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(FLOAT));
 
         registry(PlayerListHeaderS2CPacket.class, builder -> builder
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::header)
@@ -735,9 +950,9 @@ public class DataHighlightInstructions {
                 .compoundField(ITEM_STACK, ScreenHandlerSlotUpdateS2CPacket::getStack));
 
         registry(WorldTimeUpdateS2CPacket.class, builder -> builder
-                .constant(LONG)
-                .constant(LONG)
-                .constant(BOOL));
+                .constantSizeOf(LONG)
+                .constantSizeOf(LONG)
+                .constantSizeOf(BOOL));
     }
 
     private static void registerC2SPayloads() {
@@ -765,13 +980,21 @@ public class DataHighlightInstructions {
         return built;
     }
 
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, Optional<T>> optional(PacketEncoder<B, T> encoder) {
+        return optional(t -> "", encoder);
+    }
+
     public static <B extends ByteBuf, T> DataHighlightInstruction<B, Optional<T>> optional(Function<T, String> descriptor, PacketEncoder<B, T> encoder) {
         return make(b -> b
                 .field(BOOL.withDescription(bool -> bool ? "Present" : "Empty"), Optional::isPresent, Boolean::booleanValue)
                 .packetEncoder(encoder, descriptor, Optional::get));
     }
 
-    public static <B extends ByteBuf, T> DataHighlightInstruction<B, Optional<T>> optional(Function<T, String> descriptor, DataHighlightInstruction<B, T> sub) {
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, Optional<T>> optional(BufInstruction<B, T> sub) {
+        return optional(t -> "", sub);
+    }
+
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, Optional<T>> optional(Function<T, String> descriptor, BufInstruction<B, T> sub) {
         return make(b -> b
                 .field(BOOL.withDescription(bool -> bool ? "Present" : "Empty"), Optional::isPresent, Boolean::booleanValue)
                 .compoundField(sub, descriptor, Optional::get));
@@ -787,7 +1010,7 @@ public class DataHighlightInstructions {
                 .packetEncoder(encoder, descriptor, Function.identity()));
     }
 
-    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> nullable(Function<T, String> descriptor, DataHighlightInstruction<B, T> sub) {
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> nullable(Function<T, String> descriptor, BufInstruction<B, T> sub) {
         return make(b -> b
                 .field(BOOL.withDescription(bool -> bool ? "Not Null" : "Null"), Objects::nonNull, Boolean::booleanValue)
                 .compoundField(sub, descriptor, Function.identity()));

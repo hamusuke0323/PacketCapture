@@ -10,3 +10,5 @@ accessible field net/minecraft/network/packet/c2s/play/PlayerInteractEntityC2SPa
 accessible field net/minecraft/network/packet/c2s/play/PlayerInteractEntityC2SPacket$InteractAtHandler hand Lnet/minecraft/util/Hand;
 accessible field net/minecraft/network/packet/c2s/play/PlayerInteractEntityC2SPacket ATTACK Lnet/minecraft/network/packet/c2s/play/PlayerInteractEntityC2SPacket$InteractTypeHandler;
 accessible field net/minecraft/network/packet/c2s/play/UpdateCommandBlockMinecartC2SPacket entityId I
+accessible field net/minecraft/network/packet/s2c/play/EntityS2CPacket id I
+accessible field net/minecraft/network/packet/s2c/play/EntitySetHeadYawS2CPacket entityId I
