@@ -969,11 +969,15 @@ public class DataHighlightInstructions {
     }
 
     public static <B extends RegistryByteBuf, T> DataHighlightInstruction<B, T> registry(Class<T> clazz, Consumer<DataHighlightInstructionBuilder<B, T>> consumer) {
-        return register(clazz, consumer);
+        return register(clazz, true, consumer);
     }
 
     public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> register(Class<T> clazz, Consumer<DataHighlightInstructionBuilder<B, T>> consumer) {
-        var builder = DataHighlightInstructionBuilder.<B, T>builder();
+        return register(clazz, false, consumer);
+    }
+
+    public static <B extends ByteBuf, T> DataHighlightInstruction<B, T> register(Class<T> clazz, boolean registry, Consumer<DataHighlightInstructionBuilder<B, T>> consumer) {
+        var builder = DataHighlightInstructionBuilder.<B, T>builder(registry);
         consumer.accept(builder);
         var built = builder.build();
         HIGHLIGHTERS.put(clazz, built);

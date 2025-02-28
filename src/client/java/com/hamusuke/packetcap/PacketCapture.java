@@ -221,11 +221,16 @@ public final class PacketCapture implements ClientModInitializer {
         try {
             DataHighlightInstruction<B, P> inst = (DataHighlightInstruction<B, P>) DataHighlightInstructions.getFrom(packet.getClass());
             if (inst != null) {
-                DynamicRegistryManager manager;
-                while (this.mc.player == null) {
-                    Thread.yield();
+
+                DynamicRegistryManager manager = DynamicRegistryManager.EMPTY;
+
+                if (inst.isRequiredRegistry()) {
+                    while (this.mc.player == null) {
+                        Thread.yield();
+                    }
+                    manager = this.mc.player.getRegistryManager();
                 }
-                manager = this.mc.player.getRegistryManager();
+
                 var reg = new RegistryByteBuf(Unpooled.buffer(), manager); // Free buf
                 try {
                     highlights.addAll(inst.write(packetEndIndex + 1, received == null ? null : (B) new RegistryByteBuf(received, manager), (B) reg, packet));

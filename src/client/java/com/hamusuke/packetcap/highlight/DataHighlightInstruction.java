@@ -26,10 +26,12 @@ import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.VAR
 public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstruction<B, V> {
     private final Map<Integer, Integer> highlightOrders;
     private final List<BufInstruction<? super B, V>> instructions;
+    private final boolean isRequiredRegistry;
 
-    private DataHighlightInstruction(Map<Integer, Integer> highlightOrders, List<BufInstruction<? super B, V>> instructions) {
+    private DataHighlightInstruction(Map<Integer, Integer> highlightOrders, List<BufInstruction<? super B, V>> instructions, boolean isRequiredRegistry) {
         this.highlightOrders = highlightOrders;
         this.instructions = instructions;
+        this.isRequiredRegistry = isRequiredRegistry;
     }
 
     @Override
@@ -94,6 +96,10 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
         return List.copyOf(highlights.values());
     }
 
+    public boolean isRequiredRegistry() {
+        return this.isRequiredRegistry;
+    }
+
     public static class DataHighlightInstructionBuilder<B extends ByteBuf, T> {
         private final AtomicInteger instructionIndex = new AtomicInteger(0);
         private final Map<Integer, Integer> highlightOrders = Maps.newHashMap();
@@ -104,12 +110,18 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
                 return super.add(e);
             }
         };
+        private final boolean isRequiredRegistry;
 
-        private DataHighlightInstructionBuilder() {
+        private DataHighlightInstructionBuilder(boolean isRequiredRegistry) {
+            this.isRequiredRegistry = isRequiredRegistry;
         }
 
         public static <B extends ByteBuf, T> DataHighlightInstructionBuilder<B, T> builder() {
-            return new DataHighlightInstructionBuilder<>();
+            return builder(false);
+        }
+
+        public static <B extends ByteBuf, T> DataHighlightInstructionBuilder<B, T> builder(boolean isRequiredRegistry) {
+            return new DataHighlightInstructionBuilder<>(isRequiredRegistry);
         }
 
         public DataHighlightInstructionBuilder<B, T> indexed(int fieldIndex) {
@@ -243,7 +255,7 @@ public class DataHighlightInstruction<B extends ByteBuf, V> implements BufInstru
         }
 
         public DataHighlightInstruction<B, T> build() {
-            return new DataHighlightInstruction<B, T>(this.highlightOrders, ImmutableList.copyOf(this.instructions));
+            return new DataHighlightInstruction<B, T>(this.highlightOrders, ImmutableList.copyOf(this.instructions), this.isRequiredRegistry);
         }
     }
 }
