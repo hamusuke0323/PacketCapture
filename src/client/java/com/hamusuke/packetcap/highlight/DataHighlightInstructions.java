@@ -34,6 +34,7 @@ import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.entity.damage.DamageType;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.player.PlayerPosition;
+import net.minecraft.entity.vehicle.ExperimentalMinecartController;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.RegistryByteBuf;
@@ -72,6 +73,7 @@ import net.minecraft.network.packet.s2c.play.*;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.particle.ParticlesMode;
 import net.minecraft.recipe.NetworkRecipeId;
+import net.minecraft.recipe.book.RecipeBookOptions;
 import net.minecraft.recipe.book.RecipeBookType;
 import net.minecraft.recipe.display.RecipeDisplay;
 import net.minecraft.registry.DynamicRegistryManager;
@@ -81,12 +83,15 @@ import net.minecraft.registry.SerializableRegistries.SerializedRegistryEntry;
 import net.minecraft.registry.VersionedIdentifier;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.TagPacketSerializer.Serialized;
+import net.minecraft.scoreboard.ScoreboardDisplaySlot;
+import net.minecraft.scoreboard.number.NumberFormatTypes;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.state.State;
 import net.minecraft.text.Text.Serialization;
 import net.minecraft.text.TextCodecs;
 import net.minecraft.util.Arm;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
@@ -103,6 +108,7 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import static com.hamusuke.packetcap.highlight.Highlight.NO_HIGHLIGHT;
 import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.*;
 import static com.hamusuke.packetcap.highlight.instruction.BufInstruction.writeAndGuess;
 
@@ -221,6 +227,10 @@ public class DataHighlightInstructions {
 
     public static final DataHighlightInstruction<ByteBuf, MessageSignatureData> MESSAGE_SIGNATURE_DATA = register(MessageSignatureData.class, builder -> builder
             .field(BYTE_ARRAY, MessageSignatureData::data));
+
+    public static final DataHighlightInstruction<ByteBuf, MessageSignatureData.Indexed> MSD_INDEXED = register(MessageSignatureData.Indexed.class, builder -> builder
+            .field(VAR_INT.xmap(i -> i.id() + 1), Function.identity(), i -> i.fullSignature() != null)
+            .compoundField(MESSAGE_SIGNATURE_DATA, MessageSignatureData.Indexed::fullSignature));
 
     public static final DataHighlightInstruction<PacketByteBuf, Entry> ARG_ENTRY = packet(Entry.class, builder -> builder
             .compoundField(STRING, s -> "name", Entry::name)
@@ -351,6 +361,39 @@ public class DataHighlightInstructions {
             .compoundField(VEC3D, p -> "Delta Movement", PlayerPosition::deltaMovement)
             .constantSizeOf(FLOAT.withDescription(nil -> "Yaw"))
             .constantSizeOf(FLOAT.withDescription(nil -> "Pitch")));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, TeamS2CPacket.SerializableTeam> TEAM = registry(TeamS2CPacket.SerializableTeam.class, builder -> builder
+            .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, d -> "Display Name", TeamS2CPacket.SerializableTeam::getDisplayName)
+            .constantSizeOf(BYTE.withDescription(nil -> "Flags"))
+            .compoundField(STRING, s -> "Name Tag Visibility Rule: " + s, TeamS2CPacket.SerializableTeam::getNameTagVisibilityRule)
+            .compoundField(STRING, s -> "Collision Rule: " + s, TeamS2CPacket.SerializableTeam::getCollisionRule)
+            .field(VAR_INT.withDescription(o -> "Color: " + Formatting.values()[o].getName()).xmap(Enum::ordinal), TeamS2CPacket.SerializableTeam::getColor)
+            .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, d -> "Prefix", TeamS2CPacket.SerializableTeam::getPrefix)
+            .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, d -> "Suffix", TeamS2CPacket.SerializableTeam::getSuffix));
+
+    public static final DataHighlightInstruction<PacketByteBuf, RecipeBookOptions> RECIPE_BOOK_OPTIONS = packet(RecipeBookOptions.class, builder -> builder
+            .list((curWriterIndex, receivedByteBuf, buf, value) -> {
+                List<Highlight<?>> bools = Lists.newArrayList();
+                var h = BOOL.noDesc().write(curWriterIndex, receivedByteBuf, buf, null);
+                bools.addAll(h);
+                bools.addAll(h);
+                return bools;
+            }, c -> "", o -> Arrays.stream(RecipeBookType.values()).toList()));
+
+    public static final DataHighlightInstruction<PacketByteBuf, LightData> LIGHT_DATA = packet(LightData.class, builder -> builder
+            .compoundField(LONG_ARRAY_WITH_LEN.xmap(BitSet::toLongArray), LightData::getInitedSky)
+            .compoundField(LONG_ARRAY_WITH_LEN.xmap(BitSet::toLongArray), LightData::getInitedBlock)
+            .compoundField(LONG_ARRAY_WITH_LEN.xmap(BitSet::toLongArray), LightData::getUninitedSky)
+            .compoundField(LONG_ARRAY_WITH_LEN.xmap(BitSet::toLongArray), LightData::getUninitedBlock)
+            .listWithSize(BYTE_ARRAY_WITH_LEN, LightData::getSkyNibbles)
+            .listWithSize(BYTE_ARRAY_WITH_LEN, LightData::getBlockNibbles));
+
+    public static final DataHighlightInstruction<PacketByteBuf, ExperimentalMinecartController.Step> MINECART_CONTROLLER_STEP = packet(ExperimentalMinecartController.Step.class, builder -> builder
+            .compoundField(VEC3D, ExperimentalMinecartController.Step::position)
+            .compoundField(VEC3D, ExperimentalMinecartController.Step::movement)
+            .constantSizeOf(BYTE)
+            .constantSizeOf(BYTE)
+            .constantSizeOf(FLOAT));
 
     static {
         // HANDSHAKE
@@ -930,6 +973,50 @@ public class DataHighlightInstructions {
                 .field(VAR_INT, ItemPickupAnimationS2CPacket::getCollectorEntityId)
                 .field(VAR_INT, ItemPickupAnimationS2CPacket::getStackAmount));
 
+        packet(LightUpdateS2CPacket.class, builder -> builder
+                .field(VAR_INT, LightUpdateS2CPacket::getChunkX)
+                .field(VAR_INT, LightUpdateS2CPacket::getChunkZ)
+                .compoundField(LIGHT_DATA, LightUpdateS2CPacket::getData));
+
+        packet(LookAtS2CPacket.class, builder -> builder
+                .indexed(4).field(VAR_INT.xmap(Enum::ordinal), LookAtS2CPacket::getSelfAnchor)
+                .indexed(0).constantSizeOf(DOUBLE)
+                .indexed(1).constantSizeOf(DOUBLE)
+                .indexed(2).constantSizeOf(DOUBLE)
+                .indexed(6).field(BOOL, p -> p.lookAtEntity, b -> b)
+                .indexed(3).field(VAR_INT, p -> p.entityId)
+                .indexed(5).field(VAR_INT.xmap(Enum::ordinal), p -> p.targetAnchor));
+
+        packet(MoveMinecartAlongTrackS2CPacket.class, builder -> builder
+                .field(VAR_INT, MoveMinecartAlongTrackS2CPacket::entityId)
+                .listWithSize(MINECART_CONTROLLER_STEP, MoveMinecartAlongTrackS2CPacket::lerpSteps));
+
+        packet(NbtQueryResponseS2CPacket.class, builder -> builder
+                .field(VAR_INT, NbtQueryResponseS2CPacket::getTransactionId)
+                .packetEncoder((buf, value) -> buf.writeNbt(value), NbtQueryResponseS2CPacket::getNbt));
+
+        packet(OpenHorseScreenS2CPacket.class, builder -> builder
+                .field(VAR_INT, OpenHorseScreenS2CPacket::getSyncId)
+                .field(VAR_INT, OpenHorseScreenS2CPacket::getSlotColumnCount)
+                .constantSizeOf(INT));
+
+        registry(OpenScreenS2CPacket.class, builder -> builder
+                .field(VAR_INT, OpenScreenS2CPacket::getSyncId)
+                .packetCodec(PacketCodecs.registryValue(RegistryKeys.SCREEN_HANDLER), OpenScreenS2CPacket::getScreenHandlerType)
+                .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, OpenScreenS2CPacket::getName));
+
+        registry(ParticleS2CPacket.class, builder -> builder
+                .indexed(8).constantSizeOf(BOOL)
+                .indexed(9).constantSizeOf(BOOL)
+                .indexed(0).constantSizeOf(DOUBLE)
+                .indexed(1).constantSizeOf(DOUBLE)
+                .indexed(2).constantSizeOf(DOUBLE)
+                .indexed(3).constantSizeOf(FLOAT)
+                .indexed(4).constantSizeOf(FLOAT)
+                .indexed(5).constantSizeOf(FLOAT)
+                .indexed(6).constantSizeOf(FLOAT)
+                .indexed(7).constantSizeOf(INT)
+                .indexed(10).packetCodec(ParticleTypes.PACKET_CODEC, ParticleS2CPacket::getParameters));
 
         packet(PlayerAbilitiesS2CPacket.class, builder -> builder
                 .constantSizeOf(BYTE)
@@ -943,11 +1030,174 @@ public class DataHighlightInstructions {
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::header)
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::footer));
 
+
+        packet(PlayerPositionLookS2CPacket.class, builder -> builder
+                .field(VAR_INT, PlayerPositionLookS2CPacket::teleportId)
+                .compoundField(PLAYER_POSITION, PlayerPositionLookS2CPacket::change)
+                .packetCodec(PositionFlag.PACKET_CODEC, PlayerPositionLookS2CPacket::relatives));
+
+        packet(PlayerRemoveS2CPacket.class, builder -> builder
+                .listWithSize(UUID, PlayerRemoveS2CPacket::profileIds));
+
+        registry(PlayerRespawnS2CPacket.class, builder -> builder
+                .compoundField(COMMON_PLAYER_SPAWN_INFO, PlayerRespawnS2CPacket::commonPlayerSpawnInfo)
+                .constantSizeOf(BYTE));
+
+        packet(PlayerRotationS2CPacket.class, builder -> builder
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(FLOAT));
+
+        packet(PlayerSpawnPositionS2CPacket.class, builder -> builder
+                .compoundField(BLOCK_POS, PlayerSpawnPositionS2CPacket::getPos)
+                .constantSizeOf(FLOAT));
+
+        registry(PlaySoundFromEntityS2CPacket.class, builder -> builder
+                .packetCodec(SoundEvent.ENTRY_PACKET_CODEC, PlaySoundFromEntityS2CPacket::getSound)
+                .field(VAR_INT.xmap(Enum::ordinal), PlaySoundFromEntityS2CPacket::getCategory)
+                .field(VAR_INT, PlaySoundFromEntityS2CPacket::getEntityId)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(LONG));
+
+        registry(PlaySoundS2CPacket.class, builder -> builder
+                .packetCodec(SoundEvent.ENTRY_PACKET_CODEC, PlaySoundS2CPacket::getSound)
+                .field(VAR_INT.xmap(Enum::ordinal), PlaySoundS2CPacket::getCategory)
+                .constantSizeOf(INT)
+                .constantSizeOf(INT)
+                .constantSizeOf(INT)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(LONG));
+
+        packet(ProjectilePowerS2CPacket.class, builder -> builder
+                .field(VAR_INT, ProjectilePowerS2CPacket::getEntityId)
+                .constantSizeOf(DOUBLE));
+
+        // TODO: RecipeBookAdd
+
+        register(RecipeBookRemoveS2CPacket.class, builder -> builder
+                .listWithSize(NETWORK_RECIPE_ID, RecipeBookRemoveS2CPacket::recipes));
+
+        registry(RemoveEntityStatusEffectS2CPacket.class, builder -> builder
+                .field(VAR_INT, RemoveEntityStatusEffectS2CPacket::entityId)
+                .packetCodec(StatusEffect.ENTRY_PACKET_CODEC, RemoveEntityStatusEffectS2CPacket::effect));
+
+        packet(ScoreboardDisplayS2CPacket.class, builder -> builder
+                .field(VAR_INT.withDescription(o -> ScoreboardDisplaySlot.FROM_ID.apply(o).name()).xmap(ScoreboardDisplaySlot::getId), ScoreboardDisplayS2CPacket::getSlot)
+                .compoundField(STRING, ScoreboardDisplayS2CPacket::getName));
+
+        registry(ScoreboardObjectiveUpdateS2CPacket.class, builder -> builder
+                .compoundField(STRING, ScoreboardObjectiveUpdateS2CPacket::getName)
+                .indexed(4).field(BYTE.xmap(Integer::byteValue), ScoreboardObjectiveUpdateS2CPacket::getMode, m -> m == 0 || m == 2)
+                .indexed(1).packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, ScoreboardObjectiveUpdateS2CPacket::getDisplayName)
+                .indexed(2).field(VAR_INT.xmap(Enum::ordinal), ScoreboardObjectiveUpdateS2CPacket::getType)
+                .indexed(3).compoundField(optional(NumberFormatTypes.PACKET_CODEC), ScoreboardObjectiveUpdateS2CPacket::getNumberFormat));
+
+        packet(ScoreboardScoreResetS2CPacket.class, builder -> builder
+                .compoundField(STRING, ScoreboardScoreResetS2CPacket::scoreHolderName)
+                .compoundField(nullable(t -> "", STRING), ScoreboardScoreResetS2CPacket::objectiveName));
+
+        registry(ScoreboardScoreUpdateS2CPacket.class, builder -> builder
+                .compoundField(STRING, ScoreboardScoreUpdateS2CPacket::scoreHolderName)
+                .compoundField(STRING, ScoreboardScoreUpdateS2CPacket::objectiveName)
+                .field(VAR_INT, ScoreboardScoreUpdateS2CPacket::score)
+                .compoundField(optional(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC), ScoreboardScoreUpdateS2CPacket::display)
+                .compoundField(optional(NumberFormatTypes.PACKET_CODEC), ScoreboardScoreUpdateS2CPacket::numberFormat));
+
+        packet(ScreenHandlerPropertyUpdateS2CPacket.class, builder -> builder
+                .field(VAR_INT, ScreenHandlerPropertyUpdateS2CPacket::getSyncId)
+                .constantSizeOf(SHORT)
+                .constantSizeOf(SHORT));
+
         registry(ScreenHandlerSlotUpdateS2CPacket.class, builder -> builder
                 .field(VAR_INT, ScreenHandlerSlotUpdateS2CPacket::getSyncId)
                 .field(VAR_INT, ScreenHandlerSlotUpdateS2CPacket::getRevision)
                 .field(SHORT, p -> (short) p.getSlot())
                 .compoundField(ITEM_STACK, ScreenHandlerSlotUpdateS2CPacket::getStack));
+
+        register(ServerMetadataS2CPacket.class, builder -> builder
+                .packetCodec(TextCodecs.PACKET_CODEC, ServerMetadataS2CPacket::description)
+                .compoundField(optional(BYTE_ARRAY_WITH_LEN), ServerMetadataS2CPacket::favicon));
+
+        registry(SetCursorItemS2CPacket.class, builder -> builder
+                .compoundField(ITEM_STACK, SetCursorItemS2CPacket::contents));
+
+        registry(SetPlayerInventoryS2CPacket.class, builder -> builder
+                .field(VAR_INT, SetPlayerInventoryS2CPacket::slot)
+                .compoundField(ITEM_STACK, SetPlayerInventoryS2CPacket::contents));
+
+        // TODO: SetTradeOffers
+
+        packet(SignEditorOpenS2CPacket.class, builder -> builder
+                .compoundField(BLOCK_POS, SignEditorOpenS2CPacket::getPos)
+                .constantSizeOf(BOOL));
+
+        // TODO: Statistics
+        // TODO: StopSound
+        // TODO: SynchronizeRecipes
+
+        registry(TeamS2CPacket.class, builder -> builder
+                .indexed(1).compoundField(STRING, TeamS2CPacket::getTeamName)
+                .indexed(0).constantSizeOf(BYTE)
+                .indexed(3).field((curWriterIndex, receivedByteBuf, buf, value) -> {
+                    if (value.packetType != 0 && value.packetType != 2) {
+                        return Collections.singletonList(NO_HIGHLIGHT);
+                    }
+
+                    return TEAM.write(curWriterIndex, receivedByteBuf, buf, value.getTeam().orElseThrow());
+                }, Function.identity())
+                .indexed(2).field((curWriterIndex, receivedByteBuf, buf, value) -> {
+                    if (value.packetType != 0 && value.packetType != 3 && value.packetType != 4) {
+                        return Collections.singletonList(NO_HIGHLIGHT);
+                    }
+
+                    return DataHighlightInstructionBuilder.<ByteBuf, TeamS2CPacket>builder()
+                            .listWithSize(STRING, TeamS2CPacket::getPlayerNames)
+                            .build()
+                            .write(curWriterIndex, receivedByteBuf, buf, value);
+                }, Function.identity()));
+
+        packet(TitleFadeS2CPacket.class, builder -> builder
+                .constantSizeOf(INT)
+                .constantSizeOf(INT)
+                .constantSizeOf(INT));
+
+        packet(UnloadChunkS2CPacket.class, builder -> builder
+                .compoundField(CHUNK_POS, UnloadChunkS2CPacket::pos));
+
+        packet(UpdateTickRateS2CPacket.class, builder -> builder
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(BOOL));
+
+        packet(VehicleMoveS2CPacket.class, builder -> builder
+                .compoundField(VEC3D, VehicleMoveS2CPacket::position)
+                .constantSizeOf(FLOAT)
+                .constantSizeOf(FLOAT));
+
+        packet(WorldBorderCenterChangedS2CPacket.class, builder -> builder
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE));
+
+        packet(WorldBorderInitializeS2CPacket.class, builder -> builder
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .field(VAR_LONG, WorldBorderInitializeS2CPacket::getSizeLerpTime)
+                .field(VAR_INT, WorldBorderInitializeS2CPacket::getMaxRadius)
+                .field(VAR_INT, WorldBorderInitializeS2CPacket::getWarningBlocks)
+                .field(VAR_INT, WorldBorderInitializeS2CPacket::getWarningTime));
+
+        packet(WorldBorderInterpolateSizeS2CPacket.class, builder -> builder
+                .constantSizeOf(DOUBLE)
+                .constantSizeOf(DOUBLE)
+                .field(VAR_LONG, WorldBorderInterpolateSizeS2CPacket::getSizeLerpTime));
+
+        packet(WorldEventS2CPacket.class, builder -> builder
+                .constantSizeOf(INT)
+                .compoundField(BLOCK_POS, WorldEventS2CPacket::getPos)
+                .constantSizeOf(INT)
+                .constantSizeOf(BOOL));
 
         registry(WorldTimeUpdateS2CPacket.class, builder -> builder
                 .constantSizeOf(LONG)
