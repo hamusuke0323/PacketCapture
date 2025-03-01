@@ -13,13 +13,19 @@ import com.hamusuke.packetcap.utils.ByteConversion;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.packet.Packet;
 import org.apache.commons.compress.utils.Lists;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.List;
 import java.util.Map;
 
 public class PacketDetails {
+    private static final Logger LOGGER = LogManager.getLogger();
     private final ClassVisitor visitor;
     private final ImmutableList<String> hex;
     private final int size;
@@ -86,9 +92,12 @@ public class PacketDetails {
             if (visitor != null && visitor.getInstance() != null) {
                 DataHighlightInstruction fieldHighlighter = DataHighlightInstructions.getFrom(visitor.getClazz());
                 if (fieldHighlighter != null) {
-                    var buf = Unpooled.buffer();
+                    var mc = MinecraftClient.getInstance();
+                    var buf = mc.player != null ? new RegistryByteBuf(Unpooled.buffer(), mc.player.getRegistryManager()) : new PacketByteBuf(Unpooled.buffer());
                     try {
                         subHighlights.addAll(fieldHighlighter.write(this.getPacketIdEndIndex() + 1, null, buf, visitor.getInstance()));
+                    } catch (Throwable e) {
+                        LOGGER.warn("Error occurred while creating highlight map", e);
                     } finally {
                         buf.release();
                     }

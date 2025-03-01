@@ -17,6 +17,7 @@ import net.minecraft.screen.ScreenTexts;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.ColorHelper;
 import net.minecraft.util.math.MathHelper;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector2i;
 
@@ -91,7 +92,7 @@ public class PacketDetailsScreen extends Screen {
         var builder = new StringBuilder();
         boolean descriptionInserted = false;
         if (highlight.range().contains(curBytePos) && !highlight.description().isEmpty()) {
-            builder.repeat(" ", depth + 1).append(highlight.description()).append('\n');
+            builder.repeat(" ", depth + 1).append(highlight.description().replace("\n", "\n" + StringUtils.repeat(" ", depth + 1))).append('\n');
             descriptionInserted = true;
         }
 

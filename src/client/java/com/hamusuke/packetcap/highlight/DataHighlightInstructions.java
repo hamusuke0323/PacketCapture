@@ -20,6 +20,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.ints.IntList;
+import net.fabricmc.fabric.impl.networking.CommonRegisterPayload;
+import net.fabricmc.fabric.impl.networking.CommonVersionPayload;
+import net.fabricmc.fabric.impl.networking.RegistrationPayload;
 import net.minecraft.advancement.*;
 import net.minecraft.advancement.criterion.CriterionProgress;
 import net.minecraft.block.Block;
@@ -101,6 +104,7 @@ import net.minecraft.world.GameMode;
 import net.minecraft.world.dimension.DimensionType;
 import org.jetbrains.annotations.Nullable;
 
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.PublicKey;
 import java.time.Instant;
@@ -109,6 +113,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.hamusuke.packetcap.highlight.Highlight.NO_HIGHLIGHT;
+import static com.hamusuke.packetcap.highlight.Highlight.getWrittenByteLen;
 import static com.hamusuke.packetcap.highlight.instruction.BasicInstructions.*;
 import static com.hamusuke.packetcap.highlight.instruction.BufInstruction.writeAndGuess;
 
@@ -416,6 +421,7 @@ public class DataHighlightInstructions {
         registerPlayS2CPackets();
 
         // CUSTOM
+        registerCommonPayloads();
         registerC2SPayloads();
         registerS2CPayloads();
 
@@ -1030,6 +1036,8 @@ public class DataHighlightInstructions {
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::header)
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::footer));
 
+        // TODO: PlayerList
+
 
         packet(PlayerPositionLookS2CPacket.class, builder -> builder
                 .field(VAR_INT, PlayerPositionLookS2CPacket::teleportId)
@@ -1205,9 +1213,52 @@ public class DataHighlightInstructions {
                 .constantSizeOf(BOOL));
     }
 
-    private static void registerC2SPayloads() {
+    private static void registerCommonPayloads() {
         packet(BrandCustomPayload.class, builder -> builder
                 .compoundField(STRING, s -> "Brand: " + s, BrandCustomPayload::brand));
+
+        packet(RegistrationPayload.class, builder -> builder
+                .compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
+                    List<Highlight<?>> highlights = org.apache.commons.compress.utils.Lists.newArrayList();
+
+                    int i = 0;
+                    boolean first = true;
+                    for (var e : value) {
+                        List<Highlight<?>> sub = Lists.newArrayList();
+                        int start = curWriterIndex;
+
+                        if (first) {
+                            first = false;
+                        } else {
+                            var hs = BYTE.withDescription(b -> "Separator").write(curWriterIndex, receivedByteBuf, buf, (byte) 0);
+                            curWriterIndex += getWrittenByteLen(hs);
+
+                            sub.addAll(hs);
+                        }
+
+                        var hs = BYTE_ARRAY.withDescription(b -> e.toString()).write(curWriterIndex, receivedByteBuf, buf, e.toString().getBytes(StandardCharsets.US_ASCII));
+                        curWriterIndex += getWrittenByteLen(hs);
+
+                        sub.addAll(hs);
+                        var indexed = new Highlight<>(new Highlight.HighlightRange(start, curWriterIndex - 1), e, "Index: " + i, sub);
+                        highlights.add(indexed);
+                        i++;
+                    }
+
+                    return highlights;
+                }, RegistrationPayload::channels));
+
+        packet(CommonRegisterPayload.class, builder -> builder
+                .field(VAR_INT, CommonRegisterPayload::version)
+                .compoundField(STRING, CommonRegisterPayload::phase)
+                .listWithSize(IDENTIFIER, CommonRegisterPayload::channels));
+
+        packet(CommonVersionPayload.class, builder -> builder
+                .compoundField(INT_ARRAY_WITH_LEN, CommonVersionPayload::versions));
+    }
+
+    private static void registerC2SPayloads() {
+
     }
 
     private static void registerS2CPayloads() {

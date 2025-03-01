@@ -12,7 +12,6 @@ import com.hamusuke.packetcap.invoker.ParentListAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.AlwaysSelectedEntryListWidget;
 import net.minecraft.screen.ScreenTexts;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
@@ -21,7 +20,7 @@ import net.minecraft.util.math.MathHelper;
 
 import java.util.Objects;
 
-public class ClassFieldList extends AlwaysSelectedEntryListWidget<AbstractEntry> {
+public class ClassFieldList extends EntryListWidget<AbstractEntry> {
     public ClassFieldList(MinecraftClient minecraft, int width, int height, int top, int itemHeight, ClassVisitor visitor, PacketDetailsScreen packetDetailsScreen, Screen parent) {
         super(minecraft, width, height, top, itemHeight);
 
@@ -53,22 +52,6 @@ public class ClassFieldList extends AlwaysSelectedEntryListWidget<AbstractEntry>
         this.client.textRenderer.wrapLines(Text.literal(desc).styled(style -> style.withFont(PacketCapture.MONO_FONT)), this.width * 2 / 3).forEach(formattedCharSequence -> {
             this.addEntry(simple ? new MemberEntry(formattedCharSequence, field) : new VisitableClassEntry(formattedCharSequence, field, packetDetailsScreen, parent, visitor));
         });
-    }
-
-    @Override
-    public boolean isMouseOver(double p_93479_, double p_93480_) {
-        return p_93480_ >= (double) this.getY() && p_93480_ <= (double) this.getBottom();
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        for (var e : this.children()) {
-            if (e.mouseClicked(mouseX, mouseY, button)) {
-                return true;
-            }
-        }
-
-        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     public int getHeaderHeight() {
@@ -146,7 +129,7 @@ public class ClassFieldList extends AlwaysSelectedEntryListWidget<AbstractEntry>
         }
     }
 
-    public class VisitableClassEntry extends AbstractEntry implements HasClassField {
+    public class VisitableClassEntry extends AbstractEntry implements HasClassField, ShouldRefreshAfterScrolling {
         protected final ClassField field;
         private final TextButton button;
 
@@ -167,6 +150,11 @@ public class ClassFieldList extends AlwaysSelectedEntryListWidget<AbstractEntry>
             this.button.setX(rowLeft);
             this.button.setY(top);
             this.button.render(guiGraphics, mouseX, mouseY, v);
+        }
+
+        @Override
+        public void onListScrolled(int top) {
+            this.button.setY(top);
         }
 
         @Override

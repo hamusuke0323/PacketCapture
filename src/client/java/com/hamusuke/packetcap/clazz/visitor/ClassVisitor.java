@@ -19,7 +19,7 @@ public class ClassVisitor {
 
     public ClassVisitor(Class<?> clazz, Object instance) {
         this.clazz = clazz;
-        this.className = PacketCapture.getInstance().classNameDeobfuscater.deobfuscate(getClassName(clazz));
+        this.className = PacketCapture.getInstance().deobClassName(clazz);
         this.instance = instance;
     }
 

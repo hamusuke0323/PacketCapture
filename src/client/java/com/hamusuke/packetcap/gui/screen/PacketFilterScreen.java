@@ -2,6 +2,7 @@ package com.hamusuke.packetcap.gui.screen;
 
 import com.hamusuke.packetcap.PacketCapture;
 import com.hamusuke.packetcap.filter.PacketFilter;
+import com.hamusuke.packetcap.gui.components.EntryListWidget;
 import com.hamusuke.packetcap.gui.screen.PacketFilterScreen.PacketFilterList.Entry;
 import com.hamusuke.packetcap.invoker.ParentListAccessor;
 import net.minecraft.client.gui.DrawContext;
@@ -76,7 +77,7 @@ public class PacketFilterScreen extends Screen {
         this.client.setScreen(this.parent);
     }
 
-    protected final class PacketFilterList extends AlwaysSelectedEntryListWidget<Entry> {
+    protected final class PacketFilterList extends EntryListWidget<Entry> {
         private static final Text LIST_TITLE = Text.translatable(PacketCapture.MOD_ID + ".cur_filtering");
 
         private PacketFilterList(Collection<PacketFilter> list) {
@@ -85,11 +86,6 @@ public class PacketFilterScreen extends Screen {
             for (var filter : list) {
                 this.addEntry(new Entry(filter));
             }
-        }
-
-        @Override
-        public boolean isMouseOver(double p_93479_, double p_93480_) {
-            return p_93480_ >= (double) this.getY() && p_93480_ <= (double) this.getBottom();
         }
 
         @Override
@@ -102,18 +98,7 @@ public class PacketFilterScreen extends Screen {
             return this.getRight() - 6;
         }
 
-        @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            for (var e : this.children()) {
-                if (e.mouseClicked(mouseX, mouseY, button)) {
-                    return true;
-                }
-            }
-
-            return super.mouseClicked(mouseX, mouseY, button);
-        }
-
-        protected final class Entry extends AlwaysSelectedEntryListWidget.Entry<Entry> {
+        protected final class Entry extends AlwaysSelectedEntryListWidget.Entry<Entry> implements ShouldRefreshAfterScrolling {
             private static final Text TEXT = Text.translatable(PacketCapture.MOD_ID + ".button.remove");
             private final PacketFilter packetFilter;
             private final ButtonWidget remove;
@@ -142,6 +127,11 @@ public class PacketFilterScreen extends Screen {
                 this.remove.setX(x);
                 this.remove.setY(top);
                 this.remove.render(guiGraphics, mouseX, mouseY, tickDelta);
+            }
+
+            @Override
+            public void onListScrolled(int top) {
+                this.remove.setY(top);
             }
 
             @Override

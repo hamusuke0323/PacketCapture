@@ -2,6 +2,7 @@ package com.hamusuke.packetcap.gui.screen;
 
 import com.hamusuke.packetcap.PacketCapture;
 import com.hamusuke.packetcap.PacketDetails;
+import com.hamusuke.packetcap.gui.components.EntryListWidget;
 import com.hamusuke.packetcap.gui.components.ScalableCheckbox;
 import com.hamusuke.packetcap.gui.screen.PacketListScreen.PacketList.Entry;
 import com.hamusuke.packetcap.invoker.ParentListAccessor;
@@ -105,7 +106,7 @@ public class PacketListScreen extends Screen {
         }
     }
 
-    protected final class PacketList extends AlwaysSelectedEntryListWidget<Entry> {
+    protected final class PacketList extends EntryListWidget<Entry> {
         private final PacketListType type;
 
         private PacketList(List<PacketDetails> list, int top, PacketListType type) {
@@ -115,22 +116,6 @@ public class PacketListScreen extends Screen {
             for (var details : list) {
                 this.addEntry(new Entry(details));
             }
-        }
-
-        @Override
-        public boolean isMouseOver(double p_93479_, double p_93480_) {
-            return p_93480_ >= (double) this.getY() && p_93480_ <= (double) this.getBottom();
-        }
-
-        @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            for (var e : this.children()) {
-                if (e.mouseClicked(mouseX, mouseY, button)) {
-                    return true;
-                }
-            }
-
-            return super.mouseClicked(mouseX, mouseY, button);
         }
 
         @Override
@@ -145,17 +130,13 @@ public class PacketListScreen extends Screen {
         }
 
         @Override
-        public boolean mouseScrolled(double p_93416_, double p_93417_, double p_93418_, double p_298552_) {
-            var prev = this.getScrollY();
-            var r = super.mouseScrolled(p_93416_, p_93417_, p_93418_, p_298552_);
-            var cur = this.getScrollY();
+        public void setScrollY(double scrollY) {
+            super.setScrollY(scrollY);
 
             (switch (this.type) {
                 case SENT -> PacketListScreen.this.autoTxScroll;
                 case RECEIVED -> PacketListScreen.this.autoRxScroll;
-            }).setSelected(cur == (double) this.getMaxScrollY() && prev == cur);
-
-            return r;
+            }).setSelected(this.getScrollY() >= this.getMaxScrollY());
         }
 
         @Override
@@ -163,7 +144,7 @@ public class PacketListScreen extends Screen {
             return this.getRight() - 6;
         }
 
-        protected final class Entry extends AlwaysSelectedEntryListWidget.Entry<Entry> {
+        protected final class Entry extends AlwaysSelectedEntryListWidget.Entry<Entry> implements ShouldRefreshAfterScrolling {
             private static final Text TEXT = Text.translatable(PacketCapture.MOD_ID + ".button.show.details");
             private final PacketDetails packetDetails;
             private final ButtonWidget details;
@@ -191,6 +172,11 @@ public class PacketListScreen extends Screen {
                 this.details.setX(x);
                 this.details.setY(top);
                 this.details.render(guiGraphics, mouseX, mouseY, tickDelta);
+            }
+
+            @Override
+            public void onListScrolled(int top) {
+                this.details.setY(top);
             }
 
             @Override

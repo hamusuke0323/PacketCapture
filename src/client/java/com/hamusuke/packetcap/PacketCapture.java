@@ -100,7 +100,7 @@ public final class PacketCapture implements ClientModInitializer {
     private final PacketCaptureHud hud;
     private final PacketListScreen screen;
     private final Path filterConfig;
-    public final Deobfuscation classNameDeobfuscater;
+    private final Deobfuscation classNameDeobfuscater;
     public final Deobfuscation fieldNameDeobfuscater;
     private final Set<PacketFilter> packetFilters = Collections.synchronizedSet(Sets.newHashSet());
     private final AtomicBoolean capturing = new AtomicBoolean(true);
@@ -235,13 +235,13 @@ public final class PacketCapture implements ClientModInitializer {
                 try {
                     highlights.addAll(inst.write(packetEndIndex + 1, received == null ? null : (B) new RegistryByteBuf(received, manager), (B) reg, packet));
                 } catch (Throwable t) {
-                    LOGGER.warn("Failed to create highlights for " + packet.getClass(), t);
+                    LOGGER.warn("Failed to create highlights for " + this.deobClassName(packet.getClass()), t);
                 } finally {
                     reg.release();
                 }
             }
         } catch (Throwable e) {
-            LOGGER.warn("Failed to create highlights for " + packet.getClass(), e);
+            LOGGER.warn("Failed to create highlights for " + this.deobClassName(packet.getClass()), e);
         }
 
         return highlights;
@@ -482,5 +482,13 @@ public final class PacketCapture implements ClientModInitializer {
 
     public List<PacketCaptureApi> getApis() {
         return ImmutableList.copyOf(this.apis);
+    }
+
+    public String deobClassName(String className) {
+        return this.classNameDeobfuscater.deobfuscate(className);
+    }
+
+    public String deobClassName(Class<?> clazz) {
+        return this.deobClassName(ClassVisitor.getClassName(clazz));
     }
 }
