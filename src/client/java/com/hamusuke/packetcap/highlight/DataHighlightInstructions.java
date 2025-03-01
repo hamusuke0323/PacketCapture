@@ -1236,10 +1236,12 @@ public class DataHighlightInstructions {
                             sub.addAll(hs);
                         }
 
-                        var hs = BYTE_ARRAY.withDescription(b -> e.toString()).write(curWriterIndex, receivedByteBuf, buf, e.toString().getBytes(StandardCharsets.US_ASCII));
-                        curWriterIndex += getWrittenByteLen(hs);
+                        if (!e.getPath().isEmpty()) {
+                            var hs = BYTE_ARRAY.withDescription(b -> e.toString()).write(curWriterIndex, receivedByteBuf, buf, e.toString().getBytes(StandardCharsets.US_ASCII));
+                            curWriterIndex += getWrittenByteLen(hs);
+                            sub.addAll(hs);
+                        }
 
-                        sub.addAll(hs);
                         var indexed = new Highlight<>(new Highlight.HighlightRange(start, curWriterIndex - 1), e, "Index: " + i, sub);
                         highlights.add(indexed);
                         i++;
