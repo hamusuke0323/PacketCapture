@@ -1147,14 +1147,14 @@ public class DataHighlightInstructions {
         registry(TeamS2CPacket.class, builder -> builder
                 .indexed(1).compoundField(STRING, TeamS2CPacket::getTeamName)
                 .indexed(0).constantSizeOf(BYTE)
-                .indexed(3).field((curWriterIndex, receivedByteBuf, buf, value) -> {
+                .indexed(3).compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
                     if (value.packetType != 0 && value.packetType != 2) {
                         return Collections.singletonList(NO_HIGHLIGHT);
                     }
 
                     return TEAM.write(curWriterIndex, receivedByteBuf, buf, value.getTeam().orElseThrow());
                 }, Function.identity())
-                .indexed(2).field((curWriterIndex, receivedByteBuf, buf, value) -> {
+                .indexed(2).compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
                     if (value.packetType != 0 && value.packetType != 3 && value.packetType != 4) {
                         return Collections.singletonList(NO_HIGHLIGHT);
                     }

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import static com.hamusuke.packetcap.highlight.Highlight.NO_HIGHLIGHT;
 import static com.hamusuke.packetcap.highlight.Highlight.getWrittenByteLen;
 
 public class RecursiveInstruction<B extends ByteBuf, V, T> extends TransformingInstruction<B, V, T> {
@@ -27,6 +28,9 @@ public class RecursiveInstruction<B extends ByteBuf, V, T> extends TransformingI
         super((curWriterIndex, receivedByteBuf, buf, value) -> {
             List<Highlight<?>> subHighlights = instruction.write(curWriterIndex, receivedByteBuf, buf, value);
             int written = getWrittenByteLen(subHighlights);
+            if (written <= 0) {
+                return Collections.singletonList(NO_HIGHLIGHT);
+            }
 
             if (receivedByteBuf != null) {
                 receivedByteBuf.readerIndex(curWriterIndex + written);
