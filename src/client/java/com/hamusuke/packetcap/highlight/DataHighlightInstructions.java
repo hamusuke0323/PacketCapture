@@ -34,11 +34,13 @@ import net.minecraft.client.resource.language.I18n;
 import net.minecraft.command.argument.serialize.ArgumentSerializer;
 import net.minecraft.component.ComponentChanges;
 import net.minecraft.component.MergedComponentMap;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.damage.DamageType;
+import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.player.PlayerPosition;
 import net.minecraft.entity.vehicle.ExperimentalMinecartController;
@@ -93,6 +95,7 @@ import net.minecraft.registry.tag.TagPacketSerializer.Serialized;
 import net.minecraft.scoreboard.ScoreboardDisplaySlot;
 import net.minecraft.scoreboard.number.NumberFormatTypes;
 import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.stat.Stat;
 import net.minecraft.state.State;
@@ -927,6 +930,8 @@ public class DataHighlightInstructions {
                     List<Highlight<?>> highlights = Lists.newArrayList();
                     highlights.addAll(VAR_INT.withDescription(o -> "Type: " + BossBarS2CPacket.Type.values()[o]).<Enum<BossBarS2CPacket.Type>>xmap(Enum::ordinal).write(curWriterIndex, receivedByteBuf, buf, value.action.getType()));
 
+                    curWriterIndex += getWrittenByteLen(highlights);
+
                     List<Highlight<?>> list = switch (value.action) {
                         case BossBarS2CPacket.AddAction add ->
                                 ADD_ACTION.write(curWriterIndex, receivedByteBuf, buf, add);
@@ -976,8 +981,12 @@ public class DataHighlightInstructions {
                     List<Highlight<?>> highlights = Lists.newArrayList();
                     highlights.addAll(VAR_INT.withDescription(prefixed("Data Length")).write(curWriterIndex, receivedByteBuf, buf, value.positions.length));
 
+                    curWriterIndex += getWrittenByteLen(highlights);
+
                     for (int i = 0; i < value.positions.length; ++i) {
-                        highlights.addAll(VAR_LONG.withDescription(l -> "Data").write(curWriterIndex, receivedByteBuf, buf, (long) Block.getRawIdFromState(value.blockStates[i]) << 12 | (long) value.positions[i]));
+                        var written = VAR_LONG.withDescription(l -> "Data").write(curWriterIndex, receivedByteBuf, buf, (long) Block.getRawIdFromState(value.blockStates[i]) << 12 | (long) value.positions[i]);
+                        curWriterIndex += getWrittenByteLen(written);
+                        highlights.addAll(written);
                     }
 
                     return highlights;
@@ -1044,7 +1053,7 @@ public class DataHighlightInstructions {
 
         registry(EntityDamageS2CPacket.class, builder -> builder
                 .field(VAR_INT, EntityDamageS2CPacket::entityId)
-                .packetCodec(DamageType.ENTRY_PACKET_CODEC, EntityDamageS2CPacket::sourceType)
+                .packetCodec(DamageType.ENTRY_PACKET_CODEC, RegistryEntry::getIdAsString, EntityDamageS2CPacket::sourceType)
                 .field(VAR_INT, p -> p.sourceCauseId() + 1)
                 .field(VAR_INT, p -> p.sourceDirectId() + 1)
                 .compoundField(optional(VEC3D), EntityDamageS2CPacket::sourcePosition));
@@ -1116,7 +1125,7 @@ public class DataHighlightInstructions {
         registry(EntitySpawnS2CPacket.class, builder -> builder
                 .field(VAR_INT, EntitySpawnS2CPacket::getEntityId)
                 .field(UUID, EntitySpawnS2CPacket::getUuid)
-                .packetCodec(PacketCodecs.registryValue(RegistryKeys.ENTITY_TYPE), EntitySpawnS2CPacket::getEntityType)
+                .packetCodec(PacketCodecs.registryValue(RegistryKeys.ENTITY_TYPE), EntityType::toString, EntitySpawnS2CPacket::getEntityType)
                 .constantSizeOf(DOUBLE)
                 .constantSizeOf(DOUBLE)
                 .constantSizeOf(DOUBLE)
@@ -1141,8 +1150,20 @@ public class DataHighlightInstructions {
 
         registry(EntityTrackerUpdateS2CPacket.class, builder -> builder
                 .field(VAR_INT, EntityTrackerUpdateS2CPacket::id)
-                .list(writeAndGuess((registryByteBuf, serializedEntry) -> serializedEntry.write(registryByteBuf), v -> ""), c -> "", EntityTrackerUpdateS2CPacket::trackedValues)
-                .constantSizeOf(BYTE));
+                .compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
+                    List<Highlight<?>> highlights = Lists.newArrayList();
+
+                    highlights.addAll(DataHighlightInstructionBuilder.<RegistryByteBuf, List<DataTracker.SerializedEntry<?>>>builder()
+                            .list(writeAndGuess((registryByteBuf, serializedEntry) -> serializedEntry.write(registryByteBuf), v -> ""), c -> "", Function.identity())
+                            .build()
+                            .write(curWriterIndex, receivedByteBuf, buf, value));
+
+                    curWriterIndex += getWrittenByteLen(highlights);
+
+                    highlights.addAll(BYTE.withDescription(nil -> "End").write(curWriterIndex, receivedByteBuf, buf, null));
+
+                    return highlights;
+                }, EntityTrackerUpdateS2CPacket::trackedValues));
 
         packet(EntityVelocityUpdateS2CPacket.class, builder -> builder
                 .field(VAR_INT, EntityVelocityUpdateS2CPacket::getEntityId)
@@ -1272,9 +1293,14 @@ public class DataHighlightInstructions {
                                 List<Highlight<?>> highlights = Lists.newArrayList();
                                 highlights.addAll(UUID.withDescription(id -> "Profile ID: " + id).write(curWriterIndex1, receivedByteBuf1, buf1, entry.profileId()));
 
+                                curWriterIndex1 += getWrittenByteLen(highlights);
+
                                 for (var action : packet.getActions()) {
                                     var writer = PLAYER_LIST_ACTIONS.get(action);
-                                    highlights.addAll(writer.write(curWriterIndex1, receivedByteBuf1, buf1, entry));
+                                    var written = writer.write(curWriterIndex1, receivedByteBuf1, buf1, entry);
+                                    highlights.addAll(written);
+
+                                    curWriterIndex1 += getWrittenByteLen(written);
                                 }
 
                                 return highlights;
@@ -1313,8 +1339,8 @@ public class DataHighlightInstructions {
                 .constantSizeOf(LONG));
 
         registry(PlaySoundS2CPacket.class, builder -> builder
-                .packetCodec(SoundEvent.ENTRY_PACKET_CODEC, PlaySoundS2CPacket::getSound)
-                .field(VAR_INT.xmap(Enum::ordinal), PlaySoundS2CPacket::getCategory)
+                .packetCodec(SoundEvent.ENTRY_PACKET_CODEC, e -> e.getIdAsString(), PlaySoundS2CPacket::getSound)
+                .field(VAR_INT.withDescription(o -> "" + SoundCategory.values()[o]).xmap(Enum::ordinal), PlaySoundS2CPacket::getCategory)
                 .constantSizeOf(INT)
                 .constantSizeOf(INT)
                 .constantSizeOf(INT)
@@ -1402,6 +1428,8 @@ public class DataHighlightInstructions {
                 .indexed(1).compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
                     List<Highlight<?>> highlights = Lists.newArrayList();
                     highlights.addAll(BYTE.noDesc().write(curWriterIndex, receivedByteBuf, buf, null));
+
+                    curWriterIndex += getWrittenByteLen(highlights);
 
                     if (value.getCategory() == null) {
                         return highlights;
