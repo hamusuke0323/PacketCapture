@@ -30,7 +30,6 @@ import net.minecraft.advancement.criterion.CriterionProgress;
 import net.minecraft.block.Block;
 import net.minecraft.block.entity.CommandBlockBlockEntity;
 import net.minecraft.block.entity.JigsawBlockEntity;
-import net.minecraft.client.resource.language.I18n;
 import net.minecraft.command.argument.serialize.ArgumentSerializer;
 import net.minecraft.component.ComponentChanges;
 import net.minecraft.component.MergedComponentMap;
@@ -919,7 +918,7 @@ public class DataHighlightInstructions {
                 .compoundField(BLOCK_POS, BlockEventS2CPacket::getPos)
                 .constantSizeOf(BYTE)
                 .constantSizeOf(BYTE)
-                .packetCodec(PacketCodecs.registryValue(RegistryKeys.BLOCK), t -> I18n.translate(t.getTranslationKey()), BlockEventS2CPacket::getBlock));
+                .packetCodec(PacketCodecs.registryValue(RegistryKeys.BLOCK), Block::toString, BlockEventS2CPacket::getBlock));
         registry(BlockUpdateS2CPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, BlockUpdateS2CPacket::getPos)
                 .packetCodec(PacketCodecs.entryOf(Block.STATE_IDS), State::toString, BlockUpdateS2CPacket::getState));
