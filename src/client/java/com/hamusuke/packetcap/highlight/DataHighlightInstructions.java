@@ -8,6 +8,7 @@ import com.hamusuke.packetcap.PacketCaptureApi;
 import com.hamusuke.packetcap.highlight.DataHighlightInstruction.DataHighlightInstructionBuilder;
 import com.hamusuke.packetcap.highlight.instruction.BufInstruction;
 import com.hamusuke.packetcap.highlight.instruction.ClientboundPayloadInstruction;
+import com.hamusuke.packetcap.highlight.instruction.RecursiveInstruction;
 import com.hamusuke.packetcap.highlight.instruction.ServerboundPayloadInstruction;
 import com.hamusuke.packetcap.invoker.LoginHelloS2CPacketAccessor;
 import com.hamusuke.packetcap.invoker.LoginKeyC2SPacketAccessor;
@@ -20,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.ints.IntList;
+import it.unimi.dsi.fastutil.objects.Object2IntLinkedOpenHashMap;
 import net.fabricmc.fabric.impl.networking.CommonRegisterPayload;
 import net.fabricmc.fabric.impl.networking.CommonVersionPayload;
 import net.fabricmc.fabric.impl.networking.RegistrationPayload;
@@ -29,11 +31,13 @@ import net.minecraft.block.Block;
 import net.minecraft.block.entity.CommandBlockBlockEntity;
 import net.minecraft.block.entity.JigsawBlockEntity;
 import net.minecraft.client.resource.language.I18n;
+import net.minecraft.command.argument.serialize.ArgumentSerializer;
 import net.minecraft.component.ComponentChanges;
 import net.minecraft.component.MergedComponentMap;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
+import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.damage.DamageType;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.player.PlayerPosition;
@@ -45,11 +49,9 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.codec.PacketEncoder;
 import net.minecraft.network.encryption.PlayerPublicKey;
 import net.minecraft.network.encryption.PublicPlayerSession;
-import net.minecraft.network.message.ArgumentSignatureDataMap;
+import net.minecraft.network.message.*;
 import net.minecraft.network.message.ArgumentSignatureDataMap.Entry;
-import net.minecraft.network.message.ChatVisibility;
 import net.minecraft.network.message.LastSeenMessageList.Acknowledgment;
-import net.minecraft.network.message.MessageSignatureData;
 import net.minecraft.network.packet.BrandCustomPayload;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.network.packet.c2s.common.ClientOptionsC2SPacket;
@@ -75,30 +77,32 @@ import net.minecraft.network.packet.s2c.login.LoginQueryRequestS2CPacket;
 import net.minecraft.network.packet.s2c.play.*;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.particle.ParticlesMode;
+import net.minecraft.predicate.ComponentPredicate;
+import net.minecraft.recipe.Ingredient;
 import net.minecraft.recipe.NetworkRecipeId;
+import net.minecraft.recipe.RecipeDisplayEntry;
+import net.minecraft.recipe.RecipePropertySet;
 import net.minecraft.recipe.book.RecipeBookOptions;
 import net.minecraft.recipe.book.RecipeBookType;
+import net.minecraft.recipe.display.CuttingRecipeDisplay;
 import net.minecraft.recipe.display.RecipeDisplay;
-import net.minecraft.registry.DynamicRegistryManager;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.*;
 import net.minecraft.registry.SerializableRegistries.SerializedRegistryEntry;
-import net.minecraft.registry.VersionedIdentifier;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.TagPacketSerializer.Serialized;
 import net.minecraft.scoreboard.ScoreboardDisplaySlot;
 import net.minecraft.scoreboard.number.NumberFormatTypes;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.sound.SoundEvent;
+import net.minecraft.stat.Stat;
 import net.minecraft.state.State;
 import net.minecraft.text.Text.Serialization;
 import net.minecraft.text.TextCodecs;
-import net.minecraft.util.Arm;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.util.Identifier;
+import net.minecraft.util.*;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.*;
+import net.minecraft.village.TradeOffer;
+import net.minecraft.village.TradedItem;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.dimension.DimensionType;
@@ -149,7 +153,7 @@ public class DataHighlightInstructions {
 
     public static final DataHighlightInstruction<ByteBuf, Property> PROPERTY = register(Property.class, builder -> builder
             .compoundField(STRING, s -> "Property Name: " + s, Property::name)
-            .compoundField(STRING, s -> "Property Value: " + s, Property::value)
+            .compoundField(STRING, s -> "Property Value", Property::value)
             .field(nullable(s -> "Signature", STRING), Property::signature));
 
     public static final DataHighlightInstruction<ByteBuf, PropertyMap> PROPERTY_MAP = register(PropertyMap.class, builder -> builder
@@ -207,8 +211,8 @@ public class DataHighlightInstructions {
             .field(LONG.withDescription(l -> "Seed: " + l), CommonPlayerSpawnInfo::seed)
             .field(BYTE.withDescription(b -> "GameMode: " + GameMode.byId(b)), i -> (byte) i.gameMode().getId())
             .field(BYTE.withDescription(b -> "Previous GameMode: " + GameMode.byId(b)), i -> (byte) GameMode.getId(i.prevGameMode()))
-            .field(BOOL.withDescription(prefixed("Is Debug")), CommonPlayerSpawnInfo::isDebug)
-            .field(BOOL.withDescription(prefixed("Is Flat")), CommonPlayerSpawnInfo::isFlat)
+            .field(BOOL.withDescription(trueOfFalse("Is Debug")), CommonPlayerSpawnInfo::isDebug)
+            .field(BOOL.withDescription(trueOfFalse("Is Flat")), CommonPlayerSpawnInfo::isFlat)
             .compoundField(optional(pos -> "Pos: " + pos, GLOBAL_POS), i -> "Last Death Location:", CommonPlayerSpawnInfo::lastDeathLocation)
             .field(VAR_INT.withDescription(cd -> "Portal Cooldown: " + cd), CommonPlayerSpawnInfo::portalCooldown)
             .field(VAR_INT.withDescription(sl -> "Sea Level: " + sl), CommonPlayerSpawnInfo::seaLevel));
@@ -217,11 +221,11 @@ public class DataHighlightInstructions {
             .compoundField(STRING, l -> "Language: " + l, SyncedClientOptions::language)
             .field(BYTE.withDescription(d -> "View Distance: " + d), p -> (byte) p.viewDistance())
             .field(VAR_INT.withDescription(o -> "Chat Visibility: " + ChatVisibility.values()[o]), p -> p.chatVisibility().ordinal())
-            .field(BOOL.withDescription(prefixed("Chat Colors Enabled")), SyncedClientOptions::chatColorsEnabled)
+            .field(BOOL.withDescription(trueOfFalse("Chat Colors Enabled")), SyncedClientOptions::chatColorsEnabled)
             .field(BYTE.withDescription(b -> "Player Model Parts: " + b), p -> (byte) p.playerModelParts())
             .field(VAR_INT.withDescription(o -> "Main Arm: " + Arm.values()[o]), p -> p.mainArm().ordinal())
-            .field(BOOL.withDescription(prefixed("Filters Text")), SyncedClientOptions::filtersText)
-            .field(BOOL.withDescription(prefixed("Allows Server Listing")), SyncedClientOptions::allowsServerListing)
+            .field(BOOL.withDescription(trueOfFalse("Filters Text")), SyncedClientOptions::filtersText)
+            .field(BOOL.withDescription(trueOfFalse("Allows Server Listing")), SyncedClientOptions::allowsServerListing)
             .field(VAR_INT.withDescription(o -> "Particle Status: " + ParticlesMode.values()[o]), p -> p.particleStatus().ordinal()));
 
     public static final DataHighlightInstruction<ByteBuf, Instant> INSTANT = register(Instant.class, builder -> builder
@@ -261,8 +265,8 @@ public class DataHighlightInstructions {
             .constantSizeOf(FLOAT)
             .constantSizeOf(FLOAT)
             .constantSizeOf(FLOAT)
-            .field(BOOL.withDescription(prefixed("Is Inside Block")), BlockHitResult::isInsideBlock)
-            .field(BOOL.withDescription(prefixed("Is Against World Border")), BlockHitResult::isAgainstWorldBorder));
+            .field(BOOL.withDescription(trueOfFalse("Is Inside Block")), BlockHitResult::isInsideBlock)
+            .field(BOOL.withDescription(trueOfFalse("Is Against World Border")), BlockHitResult::isAgainstWorldBorder));
 
     public static final DataHighlightInstruction<PacketByteBuf, PlayerInteractEntityC2SPacket.InteractTypeHandler> INTERACT_TYPE_HANDLER = register(PlayerInteractEntityC2SPacket.InteractTypeHandler.class, builder -> builder
             .field(VAR_INT.withDescription(o -> "Type: " + PlayerInteractEntityC2SPacket.InteractType.values()[o]).xmap(Enum::ordinal), PlayerInteractEntityC2SPacket.InteractTypeHandler::getType)
@@ -334,7 +338,7 @@ public class DataHighlightInstructions {
             .compoundField(optional(id -> "Parent: " + id, IDENTIFIER), Advancement::parent)
             .compoundField(optional(d -> "Advancement Display", ADVANCEMENT_DISPLAY), Advancement::display)
             .compoundField(ADVANCEMENT_REQUIREMENTS, r -> "Advancement Requirements", Advancement::requirements)
-            .field(BOOL.withDescription(prefixed("Sends Telemetry Event")), Advancement::sendsTelemetryEvent));
+            .field(BOOL.withDescription(trueOfFalse("Sends Telemetry Event")), Advancement::sendsTelemetryEvent));
 
     public static final DataHighlightInstruction<RegistryByteBuf, AdvancementEntry> ADVANCEMENT_ENTRY = registry(AdvancementEntry.class, builder -> builder
             .compoundField(IDENTIFIER, id -> "ID: " + id, AdvancementEntry::id)
@@ -342,6 +346,9 @@ public class DataHighlightInstructions {
 
     public static final DataHighlightInstruction<ByteBuf, ChunkPos> CHUNK_POS = register(ChunkPos.class, builder -> builder
             .field(LONG.withDescription(l -> new ChunkPos(l).toString()), ChunkPos::toLong));
+
+    public static final DataHighlightInstruction<ByteBuf, ChunkSectionPos> CHUNK_SECTION_POS = register(ChunkSectionPos.class, builder -> builder
+            .field(LONG.withDescription(l -> "(x, y, z) = (" + ChunkSectionPos.from(l).toShortString() + ")"), ChunkSectionPos::asLong));
 
     public static final DataHighlightInstruction<PacketByteBuf, ChunkBiomeDataS2CPacket.Serialized> CBD_SERIALIZED = packet(ChunkBiomeDataS2CPacket.Serialized.class, builder -> builder
             .compoundField(CHUNK_POS, p -> "Chunk Pos", ChunkBiomeDataS2CPacket.Serialized::pos)
@@ -399,6 +406,170 @@ public class DataHighlightInstructions {
             .constantSizeOf(BYTE)
             .constantSizeOf(BYTE)
             .constantSizeOf(FLOAT));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, TradedItem> TRADED_ITEM = registry(TradedItem.class, builder -> builder
+            .packetCodec(PacketCodecs.registryEntry(RegistryKeys.ITEM), v -> "Item: " + v.getIdAsString(), TradedItem::item)
+            .field(VAR_INT.withDescription(prefixed("Count")), TradedItem::count)
+            .packetCodec(ComponentPredicate.PACKET_CODEC, c -> "Component Predicate: " + c.toString(), TradedItem::components));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, TradeOffer> TRADE_OFFER = registry(TradeOffer.class, builder -> builder
+            .compoundField(TRADED_ITEM, i -> "First buy item", TradeOffer::getFirstBuyItem)
+            .compoundField(ITEM_STACK, i -> "Sell item", TradeOffer::getSellItem)
+            .compoundField(optional(TRADED_ITEM), i -> "Second buy item", TradeOffer::getSecondBuyItem)
+            .field(BOOL.withDescription(trueOfFalse("Is Disabled")), TradeOffer::isDisabled)
+            .field(INT.withDescription(prefixed("Uses")), TradeOffer::getUses)
+            .field(INT.withDescription(prefixed("Max Uses")), TradeOffer::getMaxUses)
+            .field(INT.withDescription(prefixed("Merchant Experience")), TradeOffer::getMerchantExperience)
+            .field(INT.withDescription(prefixed("Special Price")), TradeOffer::getSpecialPrice)
+            .field(FLOAT.withDescription(prefixed("Price Multiplier")), TradeOffer::getPriceMultiplier)
+            .field(INT.withDescription(prefixed("Demand Bonus")), TradeOffer::getDemandBonus));
+
+    public static final DataHighlightInstruction<ByteBuf, OptionalInt> OPTIONAL_INT = register(OptionalInt.class, builder -> builder
+            .field(VAR_INT, i -> i.isPresent() ? i.getAsInt() + 1 : 0));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, RecipeDisplayEntry> RECIPE_DISPLAY_ENTRY = registry(RecipeDisplayEntry.class, builder -> builder
+            .compoundField(NETWORK_RECIPE_ID, id -> "ID", RecipeDisplayEntry::id)
+            .packetCodec(RecipeDisplay.STREAM_CODEC, d -> "Recipe display", RecipeDisplayEntry::display)
+            .compoundField(OPTIONAL_INT, g -> "Group", RecipeDisplayEntry::group)
+            .packetCodec(PacketCodecs.registryValue(RegistryKeys.RECIPE_BOOK_CATEGORY), c -> "Category", RecipeDisplayEntry::category)
+            .packetCodec(Ingredient.PACKET_CODEC.collect(PacketCodecs.toList()).collect(PacketCodecs::optional), c -> "Crafting Requirements", RecipeDisplayEntry::craftingRequirements));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, RecipeBookAddS2CPacket.Entry> RBA_ENTRY = registry(RecipeBookAddS2CPacket.Entry.class, builder -> builder
+            .compoundField(RECIPE_DISPLAY_ENTRY, RecipeBookAddS2CPacket.Entry::contents)
+            .constantSizeOf(BYTE));
+
+    public static final EnumMap<PlayerListS2CPacket.Action, DataHighlightInstruction<RegistryByteBuf, PlayerListS2CPacket.Entry>> PLAYER_LIST_ACTIONS = Util.make(Maps.newEnumMap(PlayerListS2CPacket.Action.class), map -> {
+        map.put(PlayerListS2CPacket.Action.ADD_PLAYER, make(builder -> builder
+                .compoundField(STRING, s -> "Name: " + s, e -> e.profile().getName())
+                .compoundField(PROPERTY_MAP, e -> e.profile().getProperties())));
+
+        map.put(PlayerListS2CPacket.Action.INITIALIZE_CHAT, make(builder -> builder
+                .compoundField(nullable(s -> "", PPS_SERIALIZED), PlayerListS2CPacket.Entry::chatSession)));
+
+        map.put(PlayerListS2CPacket.Action.UPDATE_GAME_MODE, make(builder -> builder
+                .field(VAR_INT.withDescription(prefixed("Game Mode ID")), e -> e.gameMode().getId())));
+
+        map.put(PlayerListS2CPacket.Action.UPDATE_LISTED, make(builder -> builder
+                .field(BOOL.withDescription(trueOfFalse("Listed")), PlayerListS2CPacket.Entry::listed)));
+
+        map.put(PlayerListS2CPacket.Action.UPDATE_LATENCY, make(builder -> builder
+                .field(VAR_INT.withDescription(prefixed("Latency")), PlayerListS2CPacket.Entry::latency)));
+
+        map.put(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME, make(builder -> builder
+                .compoundField(nullable(s -> "", TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC), s -> "Display Name", PlayerListS2CPacket.Entry::displayName)));
+
+        map.put(PlayerListS2CPacket.Action.UPDATE_LIST_ORDER, make(builder -> builder
+                .field(VAR_INT.withDescription(prefixed("List Order")), PlayerListS2CPacket.Entry::listOrder)));
+
+        map.put(PlayerListS2CPacket.Action.UPDATE_HAT, make(builder -> builder
+                .field(BOOL.withDescription(trueOfFalse("Show Hat")), PlayerListS2CPacket.Entry::showHat)));
+    });
+
+    public static final DataHighlightInstruction<PacketByteBuf, ArgumentSerializer.ArgumentTypeProperties> ARGUMENT_TYPE_PROPERTIES = packet(ArgumentSerializer.ArgumentTypeProperties.class, builder -> builder
+            .field(VAR_INT, p -> Registries.COMMAND_ARGUMENT_TYPE.getRawId(p.getSerializer()))
+            .packetEncoder((buf, value) -> value.getSerializer().writePacket(value, buf), Function.identity()));
+
+    public static final DataHighlightInstruction<PacketByteBuf, CommandTreeS2CPacket.SuggestableNode> SUGGESTABLE_NODE = packet(CommandTreeS2CPacket.SuggestableNode.class, builder -> builder
+            .compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
+                if (value instanceof CommandTreeS2CPacket.LiteralNode node) {
+                    return new RecursiveInstruction<>(STRING, v -> "", Function.identity()).write(curWriterIndex, receivedByteBuf, buf, node.literal);
+                }
+
+                if (value instanceof CommandTreeS2CPacket.ArgumentNode node) {
+                    return DataHighlightInstructionBuilder.<PacketByteBuf, CommandTreeS2CPacket.ArgumentNode>builder()
+                            .compoundField(STRING, s -> "Name: " + s, n -> n.name)
+                            .compoundField(ARGUMENT_TYPE_PROPERTIES, p -> "Properties", n -> n.properties)
+                            .compoundField((curWriterIndex1, receivedByteBuf1, buf1, value1) -> {
+                                if (value1 == null) {
+                                    return Collections.singletonList(NO_HIGHLIGHT);
+                                }
+
+                                return IDENTIFIER.write(curWriterIndex1, receivedByteBuf1, buf1, value1);
+                            }, id -> "ID: " + id, n -> n.id)
+                            .build()
+                            .write(curWriterIndex, receivedByteBuf, buf, node);
+                }
+
+                return BufInstruction.<PacketByteBuf, CommandTreeS2CPacket.SuggestableNode>writeAndGuess((byteBuf, o) -> o.write(byteBuf), v -> "").write(curWriterIndex, receivedByteBuf, buf, value);
+            }, Function.identity()));
+
+    public static final DataHighlightInstruction<PacketByteBuf, CommandTreeS2CPacket.CommandNodeData> COMMAND_NODE_DATA = packet(CommandTreeS2CPacket.CommandNodeData.class, builder -> builder
+            .constantSizeOf(BYTE.withDescription(nil -> "Flags"))
+            .compoundField(INT_ARRAY_WITH_LEN, data -> data.childNodeIndices)
+            .field((curWriterIndex, receivedByteBuf, buf, value) -> {
+                if ((value.flags & 8) == 0) {
+                    return Collections.singletonList(NO_HIGHLIGHT);
+                }
+
+                return VAR_INT.withDescription(prefixed("Redirect Node Index")).write(curWriterIndex, receivedByteBuf, buf, value.redirectNodeIndex);
+            }, Function.identity())
+            .compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
+                if (value == null) {
+                    return Collections.singletonList(NO_HIGHLIGHT);
+                }
+
+                return SUGGESTABLE_NODE.write(curWriterIndex, receivedByteBuf, buf, value);
+            }, n -> "Suggestable Node", n -> n.suggestableNode));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, ChunkData.BlockEntityData> CHUNK_BLOCK_ENTITY_DATA = registry(ChunkData.BlockEntityData.class, builder -> builder
+            .field(BYTE.withDescription(prefixed("Local XZ")).xmap(Integer::byteValue), d -> d.localXz)
+            .field(SHORT.withDescription(prefixed("y")).xmap(Integer::shortValue), d -> d.y)
+            .packetCodec(PacketCodecs.registryValue(RegistryKeys.BLOCK_ENTITY_TYPE), t -> "Block Entity Type", d -> d.type)
+            .packetEncoder((buf, value) -> buf.writeNbt(value), n -> "NBT", d -> d.nbt));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, ChunkData> CHUNK_DATA = registry(ChunkData.class, builder -> builder
+            .packetEncoder((buf, value) -> buf.writeNbt(value), m -> "Height Map", ChunkData::getHeightmap)
+            .field(VAR_INT.withDescription(prefixed("Sections Data Length")), d -> d.sectionsData.length)
+            .field(BYTE_ARRAY, p -> p.sectionsData)
+            .listWithSize(CHUNK_BLOCK_ENTITY_DATA, p -> p.blockEntities));
+
+    public static final DataHighlightInstruction<PacketByteBuf, LastSeenMessageList.Indexed> LSM_INDEXED = packet(LastSeenMessageList.Indexed.class, builder -> builder
+            .listWithSize(MSD_INDEXED, LastSeenMessageList.Indexed::buf));
+
+    public static final DataHighlightInstruction<PacketByteBuf, MessageBody.Serialized> BODY_SERIALIZED = packet(MessageBody.Serialized.class, builder -> builder
+            .compoundField(STRING, s -> "Content: " + s, MessageBody.Serialized::content)
+            .compoundField(INSTANT, i -> "Timestamp: " + i, MessageBody.Serialized::timestamp)
+            .field(LONG.withDescription(prefixed("Salt")), MessageBody.Serialized::salt)
+            .compoundField(LSM_INDEXED, i -> "Last Seen", MessageBody.Serialized::lastSeen));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, MessageType.Parameters> MESSAGE_TYPE_PARAMETERS = registry(MessageType.Parameters.class, builder -> builder
+            .packetCodec(MessageType.ENTRY_PACKET_CODEC, t -> "Message Type: " + t.getIdAsString(), MessageType.Parameters::type)
+            .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, n -> "Name", MessageType.Parameters::name)
+            .compoundField(optional(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC), n -> "Target Name", MessageType.Parameters::targetName));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, BossBarS2CPacket.AddAction> ADD_ACTION = registry(BossBarS2CPacket.AddAction.class, builder -> builder
+            .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, t -> "Name", a -> a.name)
+            .field(FLOAT.withDescription(prefixed("Percent")), a -> a.percent)
+            .field(VAR_INT.withDescription(o -> "Color: " + BossBar.Color.values()[o]).xmap(Enum::ordinal), a -> a.color)
+            .field(VAR_INT.withDescription(o -> "Style: " + BossBar.Style.values()[o]).xmap(Enum::ordinal), a -> a.style)
+            .field(BYTE.withDescription(b -> {
+                boolean darken = (b & 1) > 0;
+                boolean dragonMusic = (b & 2) > 0;
+                boolean thicken = (b & 4) > 0;
+                return "Darken Sky: " + (darken ? "true" : "false") + "\n" +
+                        "Dragon Music: " + (dragonMusic ? "true" : "false") + "\n" +
+                        "Thicken Fog: " + (thicken ? "true" : "false");
+            }).xmap(Integer::byteValue), a -> BossBarS2CPacket.maskProperties(a.darkenSky, a.dragonMusic, a.thickenFog)));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, BossBarS2CPacket.UpdateProgressAction> UPDATE_PROGRESS_ACTION = registry(BossBarS2CPacket.UpdateProgressAction.class, builder -> builder
+            .field(FLOAT.withDescription(prefixed("Progress")), BossBarS2CPacket.UpdateProgressAction::progress));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, BossBarS2CPacket.UpdateNameAction> UPDATE_NAME_ACTION = registry(BossBarS2CPacket.UpdateNameAction.class, builder -> builder
+            .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, n -> "Name", BossBarS2CPacket.UpdateNameAction::name));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, BossBarS2CPacket.UpdateStyleAction> UPDATE_STYLE_ACTION = registry(BossBarS2CPacket.UpdateStyleAction.class, builder -> builder
+            .field(VAR_INT.withDescription(o -> "Color: " + BossBar.Color.values()[o]).xmap(Enum::ordinal), a -> a.color)
+            .field(VAR_INT.withDescription(o -> "Style: " + BossBar.Style.values()[o]).xmap(Enum::ordinal), a -> a.style));
+
+    public static final DataHighlightInstruction<RegistryByteBuf, BossBarS2CPacket.UpdatePropertiesAction> UPDATE_PROPERTIES_ACTION = registry(BossBarS2CPacket.UpdatePropertiesAction.class, builder -> builder
+            .field(BYTE.withDescription(b -> {
+                boolean darken = (b & 1) > 0;
+                boolean dragonMusic = (b & 2) > 0;
+                boolean thicken = (b & 4) > 0;
+                return "Darken Sky: " + (darken ? "true" : "false") + "\n" +
+                        "Dragon Music: " + (dragonMusic ? "true" : "false") + "\n" +
+                        "Thicken Fog: " + (thicken ? "true" : "false");
+            }).xmap(Integer::byteValue), a -> BossBarS2CPacket.maskProperties(a.darkenSky, a.dragonMusic, a.thickenFog)));
 
     static {
         // HANDSHAKE
@@ -750,8 +921,41 @@ public class DataHighlightInstructions {
                 .compoundField(BLOCK_POS, BlockUpdateS2CPacket::getPos)
                 .packetCodec(PacketCodecs.entryOf(Block.STATE_IDS), State::toString, BlockUpdateS2CPacket::getState));
 
-        // TODO: BossBar
-        // TODO: ChatMessage
+        registry(BossBarS2CPacket.class, builder -> builder
+                .field(UUID, p -> p.uuid)
+                .compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
+                    List<Highlight<?>> highlights = Lists.newArrayList();
+                    highlights.addAll(VAR_INT.withDescription(o -> "Type: " + BossBarS2CPacket.Type.values()[o]).<Enum<BossBarS2CPacket.Type>>xmap(Enum::ordinal).write(curWriterIndex, receivedByteBuf, buf, value.action.getType()));
+
+                    List<Highlight<?>> list = switch (value.action) {
+                        case BossBarS2CPacket.AddAction add ->
+                                ADD_ACTION.write(curWriterIndex, receivedByteBuf, buf, add);
+                        case BossBarS2CPacket.UpdateProgressAction action ->
+                                UPDATE_PROGRESS_ACTION.write(curWriterIndex, receivedByteBuf, buf, action);
+                        case BossBarS2CPacket.UpdateNameAction action ->
+                                UPDATE_NAME_ACTION.write(curWriterIndex, receivedByteBuf, buf, action);
+                        case BossBarS2CPacket.UpdateStyleAction action ->
+                                UPDATE_STYLE_ACTION.write(curWriterIndex, receivedByteBuf, buf, action);
+                        case BossBarS2CPacket.UpdatePropertiesAction action ->
+                                UPDATE_PROPERTIES_ACTION.write(curWriterIndex, receivedByteBuf, buf, action);
+                        default -> List.of();
+                    };
+
+                    if (!list.isEmpty()) {
+                        highlights.addAll(list);
+                    }
+
+                    return highlights;
+                }, Function.identity()));
+
+        registry(ChatMessageS2CPacket.class, builder -> builder
+                .field(UUID, ChatMessageS2CPacket::sender)
+                .field(VAR_INT, ChatMessageS2CPacket::index)
+                .compoundField(nullable(s -> "", MESSAGE_SIGNATURE_DATA), ChatMessageS2CPacket::signature)
+                .compoundField(BODY_SERIALIZED, ChatMessageS2CPacket::body)
+                .compoundField(nullable(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC), ChatMessageS2CPacket::unsignedContent)
+                .packetEncoder(FilterMask::writeMask, ChatMessageS2CPacket::filterMask)
+                .compoundField(MESSAGE_TYPE_PARAMETERS, ChatMessageS2CPacket::serializedParameters));
 
         packet(ChatSuggestionsS2CPacket.class, builder -> builder
                 .field(VAR_INT.xmap(Enum::ordinal), ChatSuggestionsS2CPacket::action)
@@ -760,8 +964,25 @@ public class DataHighlightInstructions {
         packet(ChunkBiomeDataS2CPacket.class, builder -> builder
                 .listWithSize(CBD_SERIALIZED, ChunkBiomeDataS2CPacket::chunkBiomeData));
 
-        // TODO: ChunkData
-        // TODO: ChunkDeltaUpdate
+        registry(ChunkDataS2CPacket.class, builder -> builder
+                .constantSizeOf(INT)
+                .constantSizeOf(INT)
+                .compoundField(CHUNK_DATA, ChunkDataS2CPacket::getChunkData)
+                .compoundField(LIGHT_DATA, ChunkDataS2CPacket::getLightData));
+
+        packet(ChunkDeltaUpdateS2CPacket.class, builder -> builder
+                .field(CHUNK_SECTION_POS, p -> p.sectionPos)
+                .compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
+                    List<Highlight<?>> highlights = Lists.newArrayList();
+                    highlights.addAll(VAR_INT.withDescription(prefixed("Data Length")).write(curWriterIndex, receivedByteBuf, buf, value.positions.length));
+
+                    for (int i = 0; i < value.positions.length; ++i) {
+                        highlights.addAll(VAR_LONG.withDescription(l -> "Data").write(curWriterIndex, receivedByteBuf, buf, (long) Block.getRawIdFromState(value.blockStates[i]) << 12 | (long) value.positions[i]));
+                    }
+
+                    return highlights;
+                }, s -> "Section Update Data", Function.identity())
+                .sameAs(1));
 
         packet(ChunkRenderDistanceCenterS2CPacket.class, builder -> builder
                 .field(VAR_INT, ChunkRenderDistanceCenterS2CPacket::getChunkX)
@@ -774,7 +995,9 @@ public class DataHighlightInstructions {
                 .field(VAR_INT, CommandSuggestionsS2CPacket::length)
                 .listWithSize(COMMAND_SUGGESTION, CommandSuggestionsS2CPacket::suggestions));
 
-        // TODO: CommandTree
+        packet(CommandTreeS2CPacket.class, builder -> builder
+                .indexed(1).listWithSize(COMMAND_NODE_DATA, p -> p.nodes)
+                .indexed(0).field(VAR_INT, p -> p.rootSize));
 
         registry(CooldownUpdateS2CPacket.class, builder -> builder
                 .compoundField(IDENTIFIER, CooldownUpdateS2CPacket::cooldownGroup)
@@ -905,7 +1128,12 @@ public class DataHighlightInstructions {
                 .indexed(7).constantSizeOf(SHORT)
                 .indexed(8).constantSizeOf(SHORT));
 
-        // TODO: EntityStatusEffect
+        registry(EntityStatusEffectS2CPacket.class, builder -> builder
+                .field(VAR_INT, EntityStatusEffectS2CPacket::getEntityId)
+                .packetCodec(StatusEffect.ENTRY_PACKET_CODEC, RegistryEntry::getIdAsString, EntityStatusEffectS2CPacket::getEffectId)
+                .field(VAR_INT, EntityStatusEffectS2CPacket::getAmplifier)
+                .field(VAR_INT, EntityStatusEffectS2CPacket::getDuration)
+                .constantSizeOf(BYTE));
 
         packet(EntityStatusS2CPacket.class, builder -> builder
                 .constantSizeOf(INT)
@@ -1036,8 +1264,25 @@ public class DataHighlightInstructions {
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::header)
                 .packetCodec(TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC, PlayerListHeaderS2CPacket::footer));
 
-        // TODO: PlayerList
+        registry(PlayerListS2CPacket.class, builder -> builder
+                .packetEncoder((buf, value) -> buf.writeEnumSet(value, PlayerListS2CPacket.Action.class), AbstractCollection::toString, PlayerListS2CPacket::getActions)
+                .field((curWriterIndex, receivedByteBuf, buf, packet) -> {
+                    var recur = DataHighlightInstructionBuilder.<RegistryByteBuf, List<PlayerListS2CPacket.Entry>>builder()
+                            .listWithSize((curWriterIndex1, receivedByteBuf1, buf1, entry) -> {
+                                List<Highlight<?>> highlights = Lists.newArrayList();
+                                highlights.addAll(UUID.withDescription(id -> "Profile ID: " + id).write(curWriterIndex1, receivedByteBuf1, buf1, entry.profileId()));
 
+                                for (var action : packet.getActions()) {
+                                    var writer = PLAYER_LIST_ACTIONS.get(action);
+                                    highlights.addAll(writer.write(curWriterIndex1, receivedByteBuf1, buf1, entry));
+                                }
+
+                                return highlights;
+                            }, Function.identity())
+                            .build();
+
+                    return recur.write(curWriterIndex, receivedByteBuf, buf, packet.getEntries());
+                }, Function.identity()));
 
         packet(PlayerPositionLookS2CPacket.class, builder -> builder
                 .field(VAR_INT, PlayerPositionLookS2CPacket::teleportId)
@@ -1081,7 +1326,9 @@ public class DataHighlightInstructions {
                 .field(VAR_INT, ProjectilePowerS2CPacket::getEntityId)
                 .constantSizeOf(DOUBLE));
 
-        // TODO: RecipeBookAdd
+        registry(RecipeBookAddS2CPacket.class, builder -> builder
+                .listWithSize(RBA_ENTRY, RecipeBookAddS2CPacket::entries)
+                .constantSizeOf(BOOL));
 
         register(RecipeBookRemoveS2CPacket.class, builder -> builder
                 .listWithSize(NETWORK_RECIPE_ID, RecipeBookRemoveS2CPacket::recipes));
@@ -1134,15 +1381,47 @@ public class DataHighlightInstructions {
                 .field(VAR_INT, SetPlayerInventoryS2CPacket::slot)
                 .compoundField(ITEM_STACK, SetPlayerInventoryS2CPacket::contents));
 
-        // TODO: SetTradeOffers
+        registry(SetTradeOffersS2CPacket.class, builder -> builder
+                .field(VAR_INT, SetTradeOffersS2CPacket::getSyncId)
+                .listWithSize(TRADE_OFFER, SetTradeOffersS2CPacket::getOffers)
+                .field(VAR_INT, SetTradeOffersS2CPacket::getLevelProgress)
+                .field(VAR_INT, SetTradeOffersS2CPacket::getExperience)
+                .constantSizeOf(BOOL)
+                .constantSizeOf(BOOL));
 
         packet(SignEditorOpenS2CPacket.class, builder -> builder
                 .compoundField(BLOCK_POS, SignEditorOpenS2CPacket::getPos)
                 .constantSizeOf(BOOL));
 
-        // TODO: Statistics
-        // TODO: StopSound
-        // TODO: SynchronizeRecipes
+        registry(StatisticsS2CPacket.class, builder -> builder
+                .mapWithSize(writeAndGuess(Stat.PACKET_CODEC::encode, Stat::toString), VAR_INT.noDesc(), m -> "", Either.right(buf -> {
+                    return PacketCodecs.map(Object2IntLinkedOpenHashMap::new, Stat.PACKET_CODEC, PacketCodecs.VAR_INT).decode(buf);
+                })));
+
+        packet(StopSoundS2CPacket.class, builder -> builder
+                .indexed(1).compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
+                    List<Highlight<?>> highlights = Lists.newArrayList();
+                    highlights.addAll(BYTE.noDesc().write(curWriterIndex, receivedByteBuf, buf, null));
+
+                    if (value.getCategory() == null) {
+                        return highlights;
+                    }
+
+                    highlights.addAll(VAR_INT.noDesc().write(curWriterIndex, receivedByteBuf, buf, value.getCategory().ordinal()));
+
+                    return highlights;
+                }, Function.identity())
+                .indexed(0).compoundField((curWriterIndex, receivedByteBuf, buf, value) -> {
+                    if (value == null) {
+                        return Collections.singletonList(NO_HIGHLIGHT);
+                    }
+
+                    return IDENTIFIER.write(curWriterIndex, receivedByteBuf, buf, value);
+                }, StopSoundS2CPacket::getSoundId));
+
+        registry(SynchronizeRecipesS2CPacket.class, builder -> builder
+                .packetCodec(PacketCodecs.map(Maps::newHashMapWithExpectedSize, RegistryKey.createPacketCodec(RecipePropertySet.REGISTRY), RecipePropertySet.PACKET_CODEC), SynchronizeRecipesS2CPacket::itemSets)
+                .packetCodec(CuttingRecipeDisplay.Grouping.codec(), SynchronizeRecipesS2CPacket::stonecutterRecipes));
 
         registry(TeamS2CPacket.class, builder -> builder
                 .indexed(1).compoundField(STRING, TeamS2CPacket::getTeamName)

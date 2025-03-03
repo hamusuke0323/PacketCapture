@@ -16,3 +16,51 @@ accessible field net/minecraft/network/packet/s2c/play/TeamS2CPacket packetType 
 accessible field net/minecraft/network/packet/s2c/play/LookAtS2CPacket lookAtEntity Z
 accessible field net/minecraft/network/packet/s2c/play/LookAtS2CPacket entityId I
 accessible field net/minecraft/network/packet/s2c/play/LookAtS2CPacket targetAnchor Lnet/minecraft/command/argument/EntityAnchorArgumentType$EntityAnchor;
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket rootSize I
+accessible class net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$CommandNodeData
+accessible class net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$SuggestableNode
+accessible class net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$CommandTree
+accessible class net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$ArgumentNode
+accessible class net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$LiteralNode
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$CommandNodeData childNodeIndices [I
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$CommandNodeData flags I
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$CommandNodeData redirectNodeIndex I
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$LiteralNode literal Ljava/lang/String;
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$ArgumentNode id Lnet/minecraft/util/Identifier;
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$ArgumentNode name Ljava/lang/String;
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$ArgumentNode properties Lnet/minecraft/command/argument/serialize/ArgumentSerializer$ArgumentTypeProperties;
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket nodes Ljava/util/List;
+accessible field net/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$CommandNodeData suggestableNode Lnet/minecraft/network/packet/s2c/play/CommandTreeS2CPacket$SuggestableNode;
+accessible field net/minecraft/network/packet/s2c/play/ChunkDeltaUpdateS2CPacket sectionPos Lnet/minecraft/util/math/ChunkSectionPos;
+accessible field net/minecraft/network/packet/s2c/play/ChunkDeltaUpdateS2CPacket positions [S
+accessible field net/minecraft/network/packet/s2c/play/ChunkDeltaUpdateS2CPacket blockStates [Lnet/minecraft/block/BlockState;
+accessible class net/minecraft/network/packet/s2c/play/ChunkData$BlockEntityData
+accessible field net/minecraft/network/packet/s2c/play/ChunkData$BlockEntityData localXz I
+accessible field net/minecraft/network/packet/s2c/play/ChunkData$BlockEntityData y I
+accessible field net/minecraft/network/packet/s2c/play/ChunkData$BlockEntityData type Lnet/minecraft/block/entity/BlockEntityType;
+accessible field net/minecraft/network/packet/s2c/play/ChunkData$BlockEntityData nbt Lnet/minecraft/nbt/NbtCompound;
+accessible field net/minecraft/network/packet/s2c/play/ChunkData blockEntities Ljava/util/List;
+accessible field net/minecraft/network/packet/s2c/play/ChunkData sectionsData [B
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket uuid Ljava/util/UUID;
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket action Lnet/minecraft/network/packet/s2c/play/BossBarS2CPacket$Action;
+accessible class net/minecraft/network/packet/s2c/play/BossBarS2CPacket$Action
+accessible class net/minecraft/network/packet/s2c/play/BossBarS2CPacket$Type
+accessible class net/minecraft/network/packet/s2c/play/BossBarS2CPacket$AddAction
+accessible class net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdateProgressAction
+accessible class net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdateNameAction
+accessible class net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdateStyleAction
+accessible class net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdatePropertiesAction
+accessible method net/minecraft/network/packet/s2c/play/BossBarS2CPacket maskProperties (ZZZ)I
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$AddAction darkenSky Z
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$AddAction dragonMusic Z
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$AddAction thickenFog Z
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$AddAction percent F
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$AddAction name Lnet/minecraft/text/Text;
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$AddAction color Lnet/minecraft/entity/boss/BossBar$Color;
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$AddAction style Lnet/minecraft/entity/boss/BossBar$Style;
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdateStyleAction color Lnet/minecraft/entity/boss/BossBar$Color;
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdateStyleAction style Lnet/minecraft/entity/boss/BossBar$Style;
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdatePropertiesAction darkenSky Z
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdatePropertiesAction dragonMusic Z
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket$UpdatePropertiesAction thickenFog Z
+accessible field net/minecraft/network/packet/s2c/play/BossBarS2CPacket REMOVE_ACTION Lnet/minecraft/network/packet/s2c/play/BossBarS2CPacket$Action;

@@ -28,8 +28,12 @@ public class BasicInstructions {
     public static final Descriptor<ByteBuf, Long> VAR_LONG = o -> valueOnly(VarLongs::getSizeInBytes, o);
     public static final Descriptor<ByteBuf, UUID> UUID = o -> constant(16, o);
 
-    public static Function<Boolean, String> prefixed(String prefix) {
+    public static Function<Boolean, String> trueOfFalse(String prefix) {
         return b -> prefix + ": " + (b ? "true" : "false");
+    }
+
+    public static <T> Function<T, String> prefixed(String prefix) {
+        return b -> prefix + ": " + b;
     }
 
     public interface Descriptor<B extends ByteBuf, T> {
